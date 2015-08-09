@@ -18,6 +18,7 @@ def main(settings):
     config.register_service_factory(dbsession_factory, name='db')
 
     config.add_route('get_statement', '/statements/{reference}', request_method='GET')
+    config.add_route('put_statement', '/statements/{reference}', request_method='PUT')
 
     config.scan('.controllers')
 
