@@ -1,0 +1,7 @@
+---
+db:
+  url: "postgresql://username:password@hostname/database"
+  echo: False
+http:
+  host: "ip address to serve on"
+  port: "port to serve on"
