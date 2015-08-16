@@ -1,5 +1,7 @@
 from pyramid.view import view_config
+from uuid import UUID
 
+from .exceptions import GeneralError
 from .models import Statement
 from .utility import deserialize_value
 
@@ -13,23 +15,38 @@ class BaseController(object):
 
 class StatementController(BaseController):
 
+    def __init__(self, request):
+        self.request = request
+        self.db = self.request.find_service(name='db')
+        self.statements = self.request.find_service(name='statement_repository')
+
+    def parse_uuid_reference(self, reference):
+        uuid_ = deserialize_value(reference)
+        if type(uuid_) != UUID:
+            raise GeneralError("Invalid reference type")
+
+        return uuid_
+
+    @view_config(route_name='find_statements', renderer='json')
+    def find_statements(self):
+        statements = self.statements.find()
+        return statements
+
     @view_config(route_name='get_statement', renderer='json')
     def get_statement(self):
-        uuid_ = deserialize_value(self.request.matchdict['reference'])
-
-        statement = self.db.query(Statement).filter_by(uuid=uuid_).one()
-
+        uuid_ = self.parse_uuid_reference(self.request.matchdict['reference'])
+        statement = self.statements.get_by_uuid(uuid_)
         return statement
 
     @view_config(route_name='put_statement', renderer='json')
     def put_statement(self):
         print('put_statement:', self.request.json_body)
-        uuid_ = deserialize_value(self.request.matchdict['reference'])
+        raw_st = self.request.json_body
+        uuid_ = self.parse_uuid_reference(self.request.matchdict['reference'])
 
-        statement = Statement(uuid_)
-        statement.subject = deserialize_value(self.request.json_body[1], context=statement, db=self.db)
-        statement.predicate = deserialize_value(self.request.json_body[2], context=statement, db=self.db)
-        statement.object = deserialize_value(self.request.json_body[3], context=statement, db=self.db)
+        subject_r, predicate_r, object_r = [deserialize_value(v) for v in self.request.json_body[1:]]
+
+        statement = self.statements.new(uuid_, subject_r, predicate_r, object_r)
 
         self.db.add(statement)
         self.db.commit()

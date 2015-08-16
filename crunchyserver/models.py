@@ -59,11 +59,8 @@ class Statement(Base):
         primaryjoin='Statement.object_statement_id==Statement.id', post_update=True)
 
 
-    def __init__(self, uuid_=None, subject=None, predicate=None, object_=None):
-        if uuid_ is None:
-            self.uuid = uuid.uuid4()
-        else:
-            self.uuid = uuid_
+    def __init__(self, uuid_, subject=None, predicate=None, object_=None):
+        self.uuid = uuid_
 
         if subject:
             self.subject = subject

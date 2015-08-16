@@ -5,6 +5,28 @@ from uuid import UUID
 from . import models
 from .exceptions import GeneralError
 
+
+class StatementReference(object):
+
+    def __init__(self, uuid_):
+        self.uuid = uuid_
+        self.self_reference = False
+
+    def resolve(self, context, statement_repository):
+        if self.self_reference or (context is not None and self.uuid == context.uuid):
+            return context
+        elif self.uuid == context.uuid:
+            statement = statement_repository.get_by_uuid(self.uuid)
+            return statement
+
+
+class SelfReference(StatementReference):
+
+    def __init__(self):
+        self.uuid = None
+        self.self_reference = True
+
+
 def serialize_value(value):
     if value is None:
         return None
@@ -19,19 +41,14 @@ def serialize_value(value):
     elif type(value) == models.Statement:
         return 'st:{}'.format(value.uuid)
 
-def deserialize_value(value, db=None, context=None):
+
+def deserialize_value(value):
     type_str, value_str = value.split(':', 1)
     if type_str == 'uuid':
         return UUID(value_str)
     elif type_str == 'st':
         uuid_ = UUID(value_str)
-        if context is not None and uuid_ == context.uuid:
-            statement = context
-        elif db is not None:
-            statement = db.query(models.Statement).filter_by(uuid=uuid_).one()
-        else:
-            raise GeneralError("Unable to fetch statement, no db object available")
-        return statement
+        return StatementReference(uuid_=uuid_)
     elif type_str == 'int':
         return int(value_str)
     elif type_str == 'str':
@@ -39,4 +56,4 @@ def deserialize_value(value, db=None, context=None):
     elif type_str == 'datetime':
         return datetime.datetime.strptime(value_str, '%Y-%m-%dT%H:%M:%S.%f')
     elif type_str == 'special' and value_str == 'self':
-        return context
+        return SelfReference()
