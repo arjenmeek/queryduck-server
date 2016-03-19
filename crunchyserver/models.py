@@ -6,6 +6,7 @@ from sqlalchemy import (
     Column,
     DateTime,
     ForeignKey,
+    Index,
     Integer,
     String,
 )
@@ -45,11 +46,11 @@ class Statement(Base):
 
     subject_id = Column(Integer, ForeignKey('statement.id'), index=True)
     predicate_id = Column(Integer, ForeignKey('statement.id'), index=True)
-    object_statement_id = Column(Integer, ForeignKey('statement.id'), index=True)
-    object_integer = Column(Integer, index=True)
-    object_string = Column(String, index=True)
-    object_boolean = Column(Boolean, index=True)
-    object_datetime = Column(DateTime, index=True)
+    object_statement_id = Column(Integer, ForeignKey('statement.id'))
+    object_integer = Column(Integer)
+    object_string = Column(String)
+    object_boolean = Column(Boolean)
+    object_datetime = Column(DateTime)
 
     subject = relationship('Statement', backref="subject_statements", remote_side=[id],
         primaryjoin='Statement.subject_id==Statement.id', post_update=True)
@@ -57,6 +58,19 @@ class Statement(Base):
         primaryjoin='Statement.predicate_id==Statement.id', post_update=True)
     object_statement = relationship('Statement', backref="object_statements", remote_side=[id],
         primaryjoin='Statement.object_statement_id==Statement.id', post_update=True)
+
+    __table_args__ = (
+        Index('ix_statement_object_statement_id', 'object_statement_id',
+            postgresql_where=object_statement_id!=None),
+        Index('ix_statement_object_integer', 'object_integer',
+            postgresql_where=object_integer!=None),
+        Index('ix_statement_object_string', 'object_string',
+            postgresql_where=object_string!=None),
+        Index('ix_statement_object_boolean', 'object_boolean',
+            postgresql_where=object_boolean!=None),
+        Index('ix_statement_object_datetime', 'object_datetime',
+            postgresql_where=object_datetime!=None),
+    )
 
 
     def __init__(self, uuid_, subject=None, predicate=None, object_=None):
