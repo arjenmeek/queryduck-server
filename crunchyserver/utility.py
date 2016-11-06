@@ -7,12 +7,15 @@ from .exceptions import GeneralError
 
 
 class StatementReference(object):
+    """A reference to a Statement that probably requires another resources to resolve."""
 
     def __init__(self, uuid_):
+        """Initialize this as a UUID-based reference."""
         self.uuid = uuid_
         self.self_reference = False
 
     def resolve(self, context, statement_repository):
+        """Resolve the reference using the provided resources."""
         if self.self_reference or (context is not None and self.uuid == context.uuid):
             return context
         elif self.uuid == context.uuid:
@@ -21,13 +24,16 @@ class StatementReference(object):
 
 
 class SelfReference(StatementReference):
+    """A type of StatementReference to use where one element of a Statement refers to the Statement itself."""
 
     def __init__(self):
+        """Initialize this as a reference to the enveloping Statement."""
         self.uuid = None
         self.self_reference = True
 
 
 def serialize_value(value):
+    """Provide a string representation of the value."""
     if value is None:
         return None
     elif type(value) == UUID:
@@ -43,6 +49,7 @@ def serialize_value(value):
 
 
 def deserialize_value(value):
+    """Decode a string representation of a value into either the proper value or a resolvable reference."""
     type_str, value_str = value.split(':', 1)
     if type_str == 'uuid':
         return UUID(value_str)

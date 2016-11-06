@@ -32,6 +32,7 @@ Base = declarative_base()
 
 
 def init_model(settings):
+    """Initialize the application's models and return a scoped session."""
     engine = engine_from_config(settings)
     dbmaker = sessionmaker()
     dbmaker.configure(bind=engine)
@@ -39,6 +40,7 @@ def init_model(settings):
 
 
 class Statement(Base):
+    """The Statement this application is centered around."""
     __tablename__ = 'statement'
 
     id = Column(Integer, primary_key=True)
@@ -74,6 +76,7 @@ class Statement(Base):
 
 
     def __init__(self, uuid_, subject=None, predicate=None, object_=None):
+        """Assign UUID, and optionally the subject, predicate and object elements too."""
         self.uuid = uuid_
 
         if subject:
@@ -84,6 +87,7 @@ class Statement(Base):
             self.object = object_
 
     def __json__(self, request):
+        """Return a JSON-serializable version of this Statement."""
         values = [
             serialize_value(self.uuid),
             serialize_value(self.subject),
@@ -94,6 +98,7 @@ class Statement(Base):
 
     @property
     def object(self):
+        """Return the appropriate object_* property based on what column is not None."""
         if self.object_statement is not None:
             return self.object_statement
         elif self.object_integer is not None:
@@ -107,6 +112,7 @@ class Statement(Base):
 
     @object.setter
     def object(self, value):
+        """Assign the appropriate object_* property based on data type."""
         if value is None:
             self.object_statement = self
         elif type(value) == int:
