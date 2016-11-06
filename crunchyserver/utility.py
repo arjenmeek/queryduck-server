@@ -18,7 +18,7 @@ class StatementReference(object):
         """Resolve the reference using the provided resources."""
         if self.self_reference or (context is not None and self.uuid == context.uuid):
             return context
-        elif self.uuid == context.uuid:
+        else:
             statement = statement_repository.get_by_uuid(self.uuid)
             return statement
 
