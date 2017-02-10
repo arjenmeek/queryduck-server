@@ -26,7 +26,7 @@ from sqlalchemy.orm import (
 
 from sqlalchemy.orm.session import object_session
 
-from .utility import serialize_value
+from crunchylib.utility import serialize_value
 
 Base = declarative_base()
 
@@ -73,6 +73,8 @@ class Statement(Base):
         Index('ix_statement_object_datetime', 'object_datetime',
             postgresql_where=object_datetime!=None),
     )
+
+    is_statement = True
 
 
     def __init__(self, uuid_, subject=None, predicate=None, object_=None):

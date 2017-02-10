@@ -3,7 +3,10 @@ import sys
 
 from wsgiref.simple_server import make_server
 
+sys.path.append('../common')
+
 from crunchyserver import main
+
 
 with open('config.yml', 'r') as f:
     config = yaml.load(f.read())

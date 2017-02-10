@@ -1,9 +1,10 @@
 from pyramid.view import view_config
 from uuid import UUID
 
-from .exceptions import GeneralError
+from crunchylib.exceptions import GeneralError
+from crunchylib.utility import deserialize_value
+
 from .models import Statement
-from .utility import deserialize_value
 
 
 class BaseController(object):

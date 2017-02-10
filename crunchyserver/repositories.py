@@ -1,5 +1,6 @@
+from crunchylib.utility import StatementReference
+
 from .models import Statement
-from .utility import StatementReference
 
 
 class StatementRepository(object):
