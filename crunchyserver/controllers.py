@@ -60,3 +60,12 @@ class StatementController(BaseController):
         self.db.add(statement)
         self.db.commit()
         return statement
+
+    @view_config(route_name='delete_statement', renderer='json')
+    def delete_statement(self):
+        """Delete a Statement by its UUID."""
+        uuid_ = self.parse_uuid_reference(self.request.matchdict['reference'])
+        statement = self.statements.get_by_uuid(uuid_)
+        self.db.delete(statement)
+        self.db.commit()
+        return {}

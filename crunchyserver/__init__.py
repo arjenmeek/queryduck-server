@@ -30,6 +30,7 @@ def main(settings):
     config.add_route('find_statements', '/statements', request_method='GET')
     config.add_route('get_statement', '/statements/{reference}', request_method='GET')
     config.add_route('put_statement', '/statements/{reference}', request_method='PUT')
+    config.add_route('delete_statement', '/statements/{reference}', request_method='DELETE')
 
     config.scan('.controllers')
 
