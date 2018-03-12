@@ -3,7 +3,7 @@ PasteDeploy==1.5.2
 pkg-resources==0.0.0
 plaster==1.0
 plaster-pastedeploy==0.4.2
-psycopg2==2.7.4
+psycopg2-binary==2.7.4
 pyramid==1.9.1
 pyramid-services==1.1
 PyYAML==3.12
