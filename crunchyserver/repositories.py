@@ -1,6 +1,7 @@
 from crunchylib.utility import StatementReference
 
 from .models import Statement
+from .query import StatementQuery
 
 
 class StatementRepository(object):
@@ -28,6 +29,10 @@ class StatementRepository(object):
         """Find and return multiple Statements."""
         statements = self.db.query(Statement).all()
         return statements
+
+    def query(self):
+        qc = StatementQuery(self.db, self)
+        return qc
 
     def new(self, uuid_, subject_r, predicate_r, object_r):
         """Instantiate a new Statement based on the element values provided."""

@@ -7,48 +7,6 @@ from crunchylib.utility import deserialize_value, get_value_type
 from .models import Statement
 
 
-class StatementQuery(object):
-
-    def __init__(self, db):
-        self.db = db
-        self.aliases = {'main': Statement}
-        self.q = self.db.query(self.aliases['main'])
-
-    def _parse_reference(self, reference, object_type=None):
-        if ':' in reference:
-            value = deserialize_value(reference)
-        elif '.' in reference:
-            alias_name, attribute_name = reference.split('.')
-            if attribute_name == 'object' and object_type is not None:
-                attribute_name = 'object_{}'.format(object_type)
-            if not alias_name in self.aliases:
-                raise GeneralError("Unknown alias name: {}".format(alias_name))
-            value = getattr(self.aliases[alias_name], attribute_name)
-        else:
-            raise GeneralError("Invalid reference: {}".format(reference))
-        return value
-
-    def apply_filter(self, lhs_str, op_str, rhs_str=None):
-        rhs_type = None
-        if rhs_str is None:
-            rhs = None
-        else:
-            rhs = self._parse_reference(rhs_str)
-            if ':' in rhs_str:
-                rhs_type = get_value_type(rhs)
-        lhs = self._parse_reference(lhs_str, object_type=rhs_type)
-
-        if op_str == 'eq':
-            self.q = self.q.filter(lhs==rhs)
-            print('filter: {} == {}'.format(lhs, rhs))
-        else:
-            raise GeneralError("Unknown filter operation: {}".format(op_str))
-
-    def all(self):
-        statements = self.q.all()
-        return statements
-
-
 class BaseController(object):
     """Provide a basic Controller class to extend."""
 
@@ -91,7 +49,7 @@ class StatementController(BaseController):
     @view_config(route_name='find_statements', renderer='json')
     def find_statements(self):
         """Return multiple Statements."""
-        qc = StatementQuery(self.db)
+        qc = self.statements.query()
 
         filter_strings = self.request.GET.getall('filter')
         for fs in filter_strings:
