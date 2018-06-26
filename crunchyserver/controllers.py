@@ -1,7 +1,9 @@
+
 from pyramid.view import view_config
+from pyramid.httpexceptions import HTTPNotFound
 from uuid import UUID
 
-from crunchylib.exceptions import GeneralError
+from crunchylib.exceptions import GeneralError, NotFoundError
 from crunchylib.utility import deserialize_value, get_value_type
 
 from .models import Statement
@@ -63,7 +65,10 @@ class StatementController(BaseController):
     def get_statement(self):
         """Get one Statement by its UUID."""
         uuid_ = self.parse_uuid_reference(self.request.matchdict['reference'])
-        statement = self.statements.get_by_uuid(uuid_)
+        try:
+            statement = self.statements.get_by_uuid(uuid_)
+        except NotFoundError:
+            raise HTTPNotFound()
         return statement
 
     @view_config(route_name='put_statement', renderer='json')

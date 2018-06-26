@@ -1,3 +1,6 @@
+from sqlalchemy.orm.exc import NoResultFound
+
+from crunchylib.exceptions import NotFoundError
 from crunchylib.utility import StatementReference
 
 from .models import Statement
@@ -22,7 +25,10 @@ class StatementRepository(object):
 
     def get_by_uuid(self, uuid_):
         """Get a Statement by its UUID identifier."""
-        statement = self.db.query(Statement).filter_by(uuid=uuid_).one()
+        try:
+            statement = self.db.query(Statement).filter_by(uuid=uuid_).one()
+        except NoResultFound:
+            raise NotFoundError()
         return statement
 
     def find(self):
