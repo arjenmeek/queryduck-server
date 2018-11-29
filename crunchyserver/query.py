@@ -13,11 +13,9 @@ class StatementQuery(object):
         self.q = self.db.query(self.aliases['main'])
 
     def _parse_reference(self, reference, object_type=None):
-        if ':' in reference:
-            value = deserialize_value(reference)
-            value = self.statements.resolve_reference(value)
-        elif '.' in reference:
-            alias_name, attribute_name = reference.split('.')
+        if reference.startswith('column:'):
+            dummy, column_reference = reference.split(':', 2)
+            alias_name, attribute_name = column_reference.split('.')
             if attribute_name == 'object' and object_type is not None:
                 attribute_name = 'object_{}'.format(object_type)
             if object_type == 'statement':
@@ -25,6 +23,9 @@ class StatementQuery(object):
             if not alias_name in self.aliases:
                 raise GeneralError("Unknown alias name: {}".format(alias_name))
             value = getattr(self.aliases[alias_name], attribute_name)
+        elif ':' in reference:
+            value = deserialize_value(reference)
+            value = self.statements.resolve_reference(value)
         else:
             raise GeneralError("Invalid reference: {}".format(reference))
         return value
