@@ -1,3 +1,6 @@
+from sqlalchemy import and_
+from sqlalchemy.orm import aliased
+
 from crunchylib.exceptions import GeneralError
 from crunchylib.utility import deserialize_value, get_value_type
 
@@ -10,6 +13,7 @@ class StatementQuery(object):
         self.db = db
         self.statements = statements
         self.aliases = {'main': Statement}
+        self.multiple_entities = False
         self.q = self.db.query(self.aliases['main'])
 
     def _parse_reference(self, reference, object_type=None):
@@ -49,6 +53,34 @@ class StatementQuery(object):
         else:
             raise GeneralError("Unknown filter operation: {}".format(op_str))
 
+    def apply_join(self, name, lhs_str, op_str, rhs_str=None):
+        self.multiple_entities = True
+        self.aliases[name] = aliased(Statement)
+        lhs = self._parse_reference(lhs_str, 'statement')
+        rhs = self._parse_reference(rhs_str, 'statement')
+        print("LHS", lhs)
+        print("RHS", rhs)
+        #self.q = self.q.join(self.aliases[name], and_(self.aliases[name].subject==self.aliases['main'].id, lhs==rhs), isouter=True).add_entity(self.aliases[name])
+        self.q = self.q.join(self.aliases[name], and_(self.aliases[name].subject_id==self.aliases['main'].id, lhs==rhs.id), isouter=True).add_entity(self.aliases[name])
+
     def all(self):
-        statements = self.q.all()
-        return statements
+        if self.multiple_entities:
+            rows = self.q.distinct(self.aliases['main'].id).all()
+        else:
+            rows = [[s] for s in self.q.all()]
+
+        results = []
+        statements = {}
+
+        for r in rows:
+            result = []
+            for s in r:
+                if s is not None:
+                    if not str(s.uuid) in statements:
+                        statements[str(s.uuid)] = s
+                    result.append(str(s.uuid))
+                else:
+                    result.append(None)
+            results.append(result)
+
+        return results, statements

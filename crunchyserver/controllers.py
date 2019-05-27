@@ -39,6 +39,17 @@ class StatementController(BaseController):
 
         return lhs, op, rhs
 
+    def _parse_join_string(self, join_string):
+        parts = join_string.split(',')
+        if len(parts) == 3:
+            name, lhs, op = parts
+            rhs = None
+        elif len(parts) == 4:
+            name, lhs, op, rhs = parts
+        else:
+            raise GeneralError("Invalid filter string: {}".format(filter_string))
+
+        return name, lhs, op, rhs
 
     def parse_uuid_reference(self, reference):
         """Deserialize the reference if it's a UUID, raise an exception otherwise."""
@@ -53,13 +64,18 @@ class StatementController(BaseController):
         """Return multiple Statements."""
         qc = self.statements.query()
 
+        join_strings = self.request.GET.getall('join')
+        for js in join_strings:
+            name, lhs, op, rhs = self._parse_join_string(js)
+            qc.apply_join(name, lhs, op, rhs)
+
         filter_strings = self.request.GET.getall('filter')
         for fs in filter_strings:
             lhs, op, rhs = self._parse_filter_string(fs)
             qc.apply_filter(lhs, op, rhs)
 
-        statements = qc.all()
-        return statements
+        results, statements = qc.all()
+        return {'results': results, 'statements': statements}
 
     @view_config(route_name='get_statement', renderer='json')
     def get_statement(self):
