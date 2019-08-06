@@ -32,6 +32,17 @@ def main(settings):
     config.add_route('put_statement', '/statements/{reference}', request_method='PUT')
     config.add_route('delete_statement', '/statements/{reference}', request_method='DELETE')
 
+    config.add_route('create_volume', '/volumes/{reference}', request_method='PUT')
+    config.add_route('delete_volume', '/volumes/{reference}', request_method='DELETE')
+    config.add_route('get_volume', '/volumes/{reference}')
+    config.add_route('list_volumes', '/volumes')
+    config.add_route('create_blob', '/blobs/new', request_method='POST')
+    config.add_route('get_blob', '/blobs/{reference}')
+    config.add_route('list_blobs', '/blobs')
+    config.add_route('list_volume_files', '/volumes/{volume_reference}/files', request_method='GET')
+    config.add_route('mutate_volume_files', '/volumes/{volume_reference}/files', request_method='POST')
+    config.add_route('get_volume_file', '/volumes/{volume_reference}/files/{file_path}', request_method='GET')
+
     config.scan('.controllers')
 
     app = config.make_wsgi_app()
