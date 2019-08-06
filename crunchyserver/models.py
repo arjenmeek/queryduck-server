@@ -1,7 +1,10 @@
+import base64
 import datetime
+import os
 
 from sqlalchemy import (
     engine_from_config,
+    BigInteger,
     Boolean,
     Column,
     DateTime,
@@ -12,6 +15,7 @@ from sqlalchemy import (
 )
 
 from sqlalchemy.dialects.postgresql import (
+    BYTEA,
     UUID,
 )
 
@@ -127,3 +131,66 @@ class Statement(Base):
             self.object_datetime = value
         elif type(value) == Statement:
             self.object_statement = value
+
+
+class Volume(Base):
+    __tablename__ = 'volume'
+
+    id = Column(Integer, primary_key=True)
+    reference = Column(String, index=True, unique=True)
+
+    def __json__(self, request):
+        return {'id': self.id, 'reference': self.reference}
+
+
+class Blob(Base):
+    __tablename__ = 'blob'
+
+    id = Column(Integer, primary_key=True)
+    sha256 = Column(BYTEA, index=True, unique=True)
+
+    def __init__(self, sha256):
+        self.sha256 = sha256
+
+    def reference(self):
+        return 'blob:{}'.format(base64.b64encode(self.sha256).decode('utf-8'))
+
+    def __json__(self, request):
+        blob_data = {
+            'id': self.id,
+            'sha256': base64.b64encode(self.sha256).decode('utf-8')
+        }
+        return blob_data
+
+
+class File(Base):
+    __tablename__ = 'file'
+    __table_args__ = (Index('ix_volume_path', 'volume_id', 'path', unique=True),)
+
+    id = Column(Integer, primary_key=True)
+    blob_id = Column(Integer, ForeignKey('blob.id'), index=True)
+    volume_id = Column(Integer, ForeignKey('volume.id'), index=True)
+
+    blob = relationship('Blob', backref='files')
+    volume = relationship('Volume', backref='files')
+
+    path = Column(BYTEA, index=True)
+    size = Column(BigInteger, index=True)
+    mtime = Column(DateTime, index=True)
+    lastverify = Column(DateTime, index=True)
+
+    def __json__(self, request):
+        return {
+            'id': self.id,
+            'volume_id': self.volume_id,
+            'path': os.fsdecode(self.path),
+            'sha256': base64.b64encode(self.blob.sha256).decode() if self.blob else None,
+            'size': self.size,
+            'mtime': self.get_mtime_string() if self.mtime else None,
+        }
+
+    def get_mtime_string(self):
+        mtime_string = self.mtime.isoformat()
+        if len(mtime_string) == 19:
+            mtime_string += '.000000'
+        return mtime_string
