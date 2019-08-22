@@ -53,6 +53,7 @@ class Statement(Base):
     subject_id = Column(Integer, ForeignKey('statement.id'), index=True)
     predicate_id = Column(Integer, ForeignKey('statement.id'), index=True)
     object_statement_id = Column(Integer, ForeignKey('statement.id'))
+    object_blob_id = Column(Integer, ForeignKey('blob.id'))
     object_integer = Column(Integer)
     object_string = Column(String)
     object_boolean = Column(Boolean)
@@ -64,10 +65,13 @@ class Statement(Base):
         primaryjoin='Statement.predicate_id==Statement.id', post_update=True)
     object_statement = relationship('Statement', backref="object_statements", remote_side=[id],
         primaryjoin='Statement.object_statement_id==Statement.id', post_update=True)
+    object_blob = relationship('Blob', backref="object_statements", lazy='joined')
 
     __table_args__ = (
         Index('ix_statement_object_statement_id', 'object_statement_id',
             postgresql_where=object_statement_id!=None),
+        Index('ix_statement_object_blob_id', 'object_blob_id',
+            postgresql_where=object_blob_id!=None),
         Index('ix_statement_object_integer', 'object_integer',
             postgresql_where=object_integer!=None),
         Index('ix_statement_object_string', 'object_string',
@@ -107,6 +111,8 @@ class Statement(Base):
         """Return the appropriate object_* property based on what column is not None."""
         if self.object_statement is not None:
             return self.object_statement
+        elif self.object_blob is not None:
+            return self.object_blob
         elif self.object_integer is not None:
             return self.object_integer
         elif self.object_string is not None:
@@ -131,6 +137,8 @@ class Statement(Base):
             self.object_datetime = value
         elif type(value) == Statement:
             self.object_statement = value
+        elif type(value) == Blob:
+            self.object_blob = value
 
 
 class Volume(Base):
@@ -149,11 +157,16 @@ class Blob(Base):
     id = Column(Integer, primary_key=True)
     sha256 = Column(BYTEA, index=True, unique=True)
 
+    is_blob = True
+
     def __init__(self, sha256):
         self.sha256 = sha256
 
     def reference(self):
         return 'blob:{}'.format(base64.b64encode(self.sha256).decode('utf-8'))
+
+    def get_identifier(self):
+        return base64.b64encode(self.sha256).decode('utf-8')
 
     def __json__(self, request):
         blob_data = {

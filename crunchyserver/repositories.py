@@ -1,9 +1,9 @@
 from sqlalchemy.orm.exc import NoResultFound
 
 from crunchylib.exceptions import NotFoundError
-from crunchylib.utility import StatementReference
+from crunchylib.utility import StatementReference, BlobReference
 
-from .models import Statement
+from .models import Statement, Blob
 from .query import StatementQuery
 
 
@@ -19,9 +19,15 @@ class StatementRepository(object):
         """Resolve StatementReference instances into an actual Statement."""
         if isinstance(orig_value, StatementReference):
             value = orig_value.resolve(context, self)
+        elif isinstance(orig_value, BlobReference):
+            value = orig_value.resolve(self)
         else:
             value = orig_value
         return value
+
+    def get_blob(self, checksum):
+        blob = self.db.query(Blob).filter(Blob.sha256==checksum).one()
+        return blob
 
     def get_by_uuid(self, uuid_):
         """Get a Statement by its UUID identifier."""
