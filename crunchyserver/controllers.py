@@ -1,10 +1,11 @@
 import base64
 import datetime
 import os
+import urllib
 
 from pyramid.view import view_config
 from pyramid.httpexceptions import HTTPNotFound
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from sqlalchemy.orm import joinedload
 
@@ -12,6 +13,7 @@ from crunchylib.exceptions import GeneralError, NotFoundError
 from crunchylib.utility import deserialize_value, get_value_type
 
 
+from .query import CoreStatementQuery
 from .models import Statement, Volume, Blob, File
 
 
@@ -108,6 +110,26 @@ class StatementController(BaseController):
         self.db.commit()
         return statement
 
+    @view_config(route_name='create_statements', renderer='json')
+    def create_statements(self):
+        """Insert multiple statements"""
+        print("MULTI INSERT")
+        inserted = []
+        for row in self.request.json_body:
+            print(row)
+            parts = [uuid4()]
+            for v in row:
+                if type(v) == int:
+                    parts.append(inserted[v])
+                else:
+                    print("PART", type(v))
+                    parts.append(deserialize_value(v))
+            statement = self.statements.new(*parts)
+            inserted.append(statement)
+            self.db.add(statement)
+        self.db.commit()
+        return {}
+
     @view_config(route_name='delete_statement', renderer='json')
     def delete_statement(self):
         """Delete a Statement by its UUID."""
@@ -116,6 +138,42 @@ class StatementController(BaseController):
         self.db.delete(statement)
         self.db.commit()
         return {}
+
+    def _parse_query_string(self, query_string):
+        q = CoreStatementQuery(self.db)
+        clauses = query_string.split('&')
+        options = {}
+        for clause in clauses:
+            key, value_str = clause.split('=', 1)
+            if '.' in value_str:
+                value = [urllib.parse.unquote(p) for p in value_str.split('.')]
+            else:
+                value = urllib.parse.unquote(value_str)
+
+            if key.startswith('c_'):
+                q.add_join(key[2:], value)
+                q.add_column(key[2:])
+            elif key.startswith('j_'):
+                q.add_join(key[2:], value)
+            elif key.startswith('f_'):
+                q.add_filter(key[2:], value)
+
+        return q
+
+    def serialize_row(self, row):
+        values = []
+        for v in tuple(row):
+            if type(v) == UUID:
+                values.append(str(v))
+            else:
+                values.append(v)
+        return values
+
+    @view_config(route_name='query_statements', renderer='json')
+    def query_statements(self):
+        """Query Statements."""
+        query = self._parse_query_string(self.request.query_string)
+        return query.all()
 
 
 class VolumeController(BaseController):

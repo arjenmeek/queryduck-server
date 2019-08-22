@@ -28,6 +28,8 @@ def main(settings):
     config.register_service_factory(statement_repository_factory, name='statement_repository')
 
     config.add_route('find_statements', '/statements', request_method='GET')
+    config.add_route('create_statements', '/statements', request_method='POST')
+    config.add_route('query_statements', '/statements/query', request_method='GET')
     config.add_route('get_statement', '/statements/{reference}', request_method='GET')
     config.add_route('put_statement', '/statements/{reference}', request_method='PUT')
     config.add_route('delete_statement', '/statements/{reference}', request_method='DELETE')
