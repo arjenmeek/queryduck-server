@@ -8,6 +8,7 @@ from sqlalchemy import (
     Boolean,
     Column,
     DateTime,
+    Float,
     ForeignKey,
     Index,
     Integer,
@@ -55,6 +56,7 @@ class Statement(Base):
     object_statement_id = Column(Integer, ForeignKey('statement.id'))
     object_blob_id = Column(Integer, ForeignKey('blob.id'))
     object_integer = Column(Integer)
+    object_float = Column(Float)
     object_string = Column(String)
     object_boolean = Column(Boolean)
     object_datetime = Column(DateTime)
@@ -74,6 +76,8 @@ class Statement(Base):
             postgresql_where=object_blob_id!=None),
         Index('ix_statement_object_integer', 'object_integer',
             postgresql_where=object_integer!=None),
+        Index('ix_statement_object_float', 'object_float',
+            postgresql_where=object_float!=None),
         Index('ix_statement_object_string', 'object_string',
             postgresql_where=object_string!=None),
         Index('ix_statement_object_boolean', 'object_boolean',
