@@ -50,7 +50,7 @@ def main(settings):
     config.set_root_factory(lambda request: Root())
     config.add_forbidden_view(forbidden_view)
 
-    config.add_static_view(name='static', path='../../webclient')
+    config.add_static_view(name='static', path='../../webclient/static')
 
     config.add_route('find_statements', '/statements', request_method='GET')
     config.add_route('get_schema', '/schemas/{reference}', request_method='GET')
