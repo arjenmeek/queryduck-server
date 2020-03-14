@@ -31,8 +31,6 @@ from sqlalchemy.orm import (
 
 from sqlalchemy.orm.session import object_session
 
-from crunchylib.utility import serialize_value
-
 Base = declarative_base()
 
 
@@ -86,63 +84,7 @@ class Statement(Base):
             postgresql_where=object_datetime!=None),
     )
 
-    is_statement = True
-
-
-    def __init__(self, uuid_, subject=None, predicate=None, object_=None):
-        """Assign UUID, and optionally the subject, predicate and object elements too."""
-        self.uuid = uuid_
-
-        if subject:
-            self.subject = subject
-        if predicate:
-            self.predicate = predicate
-        if object_:
-            self.object = object_
-
-    def __json__(self, request):
-        """Return a JSON-serializable version of this Statement."""
-        values = [
-            serialize_value(self.uuid),
-            serialize_value(self.subject),
-            serialize_value(self.predicate),
-            serialize_value(self.object),
-        ]
-        return values
-
-    @property
-    def object(self):
-        """Return the appropriate object_* property based on what column is not None."""
-        if self.object_statement is not None:
-            return self.object_statement
-        elif self.object_blob is not None:
-            return self.object_blob
-        elif self.object_integer is not None:
-            return self.object_integer
-        elif self.object_string is not None:
-            return self.object_string
-        elif self.object_boolean is not None:
-            return self.object_boolean
-        elif self.object_datetime is not None:
-            return self.object_datetime
-
-    @object.setter
-    def object(self, value):
-        """Assign the appropriate object_* property based on data type."""
-        if value is None:
-            self.object_statement = self
-        elif type(value) == int:
-            self.object_integer = value
-        elif type(value) == str:
-            self.object_string = value
-        elif type(value) == bool:
-            self.object_boolean = value
-        elif type(value) == datetime.datetime:
-            self.object_datetime = value
-        elif type(value) == Statement:
-            self.object_statement = value
-        elif type(value) == Blob:
-            self.object_blob = value
+statement_table = Statement.__table__
 
 
 class Volume(Base):
