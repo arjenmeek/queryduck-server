@@ -10,7 +10,6 @@ from sqlalchemy import and_
 from sqlalchemy.sql import select
 
 from crunchylib.exceptions import GeneralError, NotFoundError
-from crunchylib.utility import deserialize_value, serialize_value
 from crunchylib.value import Statement, Value
 
 from .models import statement_table
@@ -140,9 +139,9 @@ class StatementController(BaseController):
 
         for row in self.db.execute(s):
             subject_id = row[self.t.c.subject_id]
-            predicate_key = serialize_value({'uuid': row[predicate.c.uuid]})
-            row_object = Value(db_columns=self.t.c, db_row=row, db_entities={'st': object_statement})
-            statements_by_id[subject_id].attributes[predicate_key].append(row_object)
+            predicate_key = Value.native(Statement(uuid_=row[predicate.c.uuid]))
+            row_object = Value(db_columns=self.t.c, db_row=row, db_entities={'s': object_statement})
+            statements_by_id[subject_id].attributes[predicate_key.serialize()].append(row_object)
 
     @view_config(route_name='find_statements', renderer='json')
     def find_statements(self):
@@ -152,17 +151,16 @@ class StatementController(BaseController):
         self._add_statement_values(statements)
         return statements
 
-
     @view_config(route_name='schema_transaction', renderer='json', permission='create')
     def schema_transaction(self):
         schema_reference = Value(self.request.matchdict['reference'])
         schema = self._establish_schema(schema_reference, self.default_schema_keys)
-        new_statement_ids = self._schema_transaction(schema_reference, self.request.json_body)
+        new_statement_ids = self._schema_transaction(schema, self.request.json_body)
         self._create_transaction(schema, new_statement_ids)
         print("new", new_statement_ids)
         self.db.commit()
 
-    def _schema_transaction(self, schema_reference, main_statements):
+    def _schema_transaction(self, schema, main_statements):
         new_statement_ids = []
         intermediate = []
         for main_statement in main_statements:
@@ -214,15 +212,6 @@ class StatementController(BaseController):
                 object_statement_id=s_id
             )
 
-    def _get_schema_attribute(self, schema_id, attribute_name):
-        where = and_(self.t.c.predicate_id==schema_id, self.t.c.object_string==attribute_name)
-        s = select([self.t.c.subject_id], limit=1).where(where)
-        row = self.db.execute(s).first()
-        if row:
-            return row[self.t.c.subject_id]
-        else:
-            return self._create_statement(subject_id=None, predicate_id=schema_id, object_string=attribute_name)
-
     def _create_statement(self, **kwargs):
         """Create a Statement with specified values. None values are changed to be self referential."""
         insert = self.t.insert().values(uuid=uuid4())
@@ -232,24 +221,6 @@ class StatementController(BaseController):
         update = self.t.update().where(where).values(values)
         self.db.execute(update)
         return insert_id
-
-    def _get_object_type_column(self, type_):
-        column_names = {
-            int: 'object_integer',
-            float: 'object_float',
-            str: 'object_string',
-            bool: 'object_boolean',
-            dict: 'object_statement_id',
-            type(None): '',
-            datetime.datetime: 'object_datetime',
-        }
-        return column_names[type_]
-
-    def _get_statement_id(self, statement):
-        s = select([self.t.c.id], limit=1).where(self.t.c.uuid==statement.uuid)
-        result = self.db.execute(s)
-        statement.id = result.fetchone()['id']
-        return statement.id
 
     def _fill_ids(self, statements):
         # TODO: Fetch all in one query
@@ -263,4 +234,3 @@ class StatementController(BaseController):
             s = select([self.t.c.id], limit=1).where(self.t.c.uuid==statement.uuid)
             result = self.db.execute(s)
             statement.id = result.fetchone()['id']
-            print("FOUND", statement.id, statement.uuid)
