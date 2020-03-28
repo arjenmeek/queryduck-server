@@ -15,6 +15,7 @@ from crunchylib.value import Statement, Value
 
 from .models import statement_table
 
+
 @view_config(context=Exception, renderer='json')
 def error_view(e, request):
     #log or do other stuff to exc...
@@ -31,8 +32,19 @@ class BaseController(object):
         self.db = self.request.find_service(name='db')
 
 
-class SimpleStatementController(BaseController):
+class StatementController(BaseController):
     """Provide a limited but simplified way to fetch and save Statements"""
+
+    default_schema_keys = [
+        'Resource',
+        'Transaction',
+        'User',
+        'type',
+        'created_at',
+        'created_by',
+        'transaction_contains',
+        'statement_count'
+    ]
 
     def __init__(self, request):
         """Make relevant services available."""
@@ -42,18 +54,49 @@ class SimpleStatementController(BaseController):
 
     @view_config(route_name='get_schema', renderer='json')
     def get_schema(self):
-        uuid_ = UUID(self.request.matchdict['reference'])
-        s = select([self.t.c.id]).select_from(self.t).where(self.t.c.uuid==uuid_)
-        (schema_id,) = self.db.execute(s).fetchone()
+        schema = self._get_schema(Value(self.request.matchdict['reference']))
+        return {k: v.serialize() for k, v in schema.items()}
+
+    def _get_schema(self, schema_reference):
+        self._fill_ids(schema_reference)
 
         subject = self.t.alias()
         s_from = self.t.join(subject, subject.c.id==self.t.c.subject_id)
-        s = select([subject.c.uuid, self.t.c.object_string])\
+        s = select([subject.c.id, subject.c.uuid, self.t.c.object_string])\
             .select_from(s_from)\
-            .where(self.t.c.predicate_id==schema_id)
+            .where(self.t.c.predicate_id==schema_reference.v.id)
         results = self.db.execute(s)
-        schema_map = {string: 'st:{}'.format(uuid) for uuid, string in results if string is not None}
-        return schema_map
+
+        schema = {string: Value.native(Statement(id_=id_, uuid_=uuid_))
+            for id_, uuid_, string in results if string is not None}
+        return schema
+
+    @view_config(route_name='establish_schema', renderer='json')
+    def establish_schema(self):
+        schema_reference = Value(self.request.matchdict['reference'])
+        schema = self._establish_schema(schema_reference, self.request.json_body)
+        self.db.commit()
+        return {k: v.serialize() for k, v in schema.items()}
+
+    def _establish_schema(self, schema_reference, names):
+        schema = self._get_schema(schema_reference)
+
+        create_names = []
+        for name in names:
+            if not name in schema:
+                create_names.append(name)
+
+        if len(create_names):
+            self._fill_ids(schema_reference)
+            for name in create_names:
+                self._create_statement(
+                    subject_id=None,
+                    predicate_id=schema_reference.v.id,
+                    object_string=name
+                )
+            schema = self._get_schema(schema_reference)
+
+        return schema
 
     def _process_filter(self, key_string, value_string):
         key = Value(key_string)
@@ -72,10 +115,10 @@ class SimpleStatementController(BaseController):
         wheres = []
         for k_str, v_str in filters:
             k, op, v = self._process_filter(k_str, v_str)
-            self._fill_statement_ids([k.content, v.content])
+            self._fill_ids([k.v, v.v])
 
             a = self.t.alias()
-            select_from = select_from.join(a, and_(a.c.subject_id==self.t.c.id, a.c.predicate_id==k.content.id), isouter=True)
+            select_from = select_from.join(a, and_(a.c.subject_id==self.t.c.id, a.c.predicate_id==k.v.id), isouter=True)
             wheres.append(v.column_compare(op, a.c))
         s = select([self.t.c.id, self.t.c.uuid]).select_from(select_from).where(and_(*wheres))
         results = self.db.execute(s)
@@ -109,49 +152,67 @@ class SimpleStatementController(BaseController):
         self._add_statement_values(statements)
         return statements
 
+
     @view_config(route_name='schema_transaction', renderer='json', permission='create')
     def schema_transaction(self):
         schema_reference = Value(self.request.matchdict['reference'])
-        self._fill_statement_ids([schema_reference.content])
-        schema_id = schema_reference.content.id
-        print(schema_reference, schema_id)
-        schema = {}
+        schema = self._establish_schema(schema_reference, self.default_schema_keys)
+        new_statement_ids = self._schema_transaction(schema_reference, self.request.json_body)
+        self._create_transaction(schema, new_statement_ids)
+        print("new", new_statement_ids)
+        self.db.commit()
+
+    def _schema_transaction(self, schema_reference, main_statements):
         new_statement_ids = []
-        for name in ('Resource', 'Transaction', 'User', 'type', 'created_at', 'created_by', 'transaction_contains', 'statement_count'):
-            schema[name] = self._get_schema_attribute(schema_id, name)
         intermediate = []
-        for main_statement in self.request.json_body:
-            print(main_statement)
-            insert_id = self._create_statement(subject_id=None, predicate_id=schema['type'], object_statement_id=schema['Resource'])
+        for main_statement in main_statements:
+            insert_id = self._create_statement(
+                subject_id=None,
+                predicate_id=schema['type'].v.id,
+                object_statement_id=schema['Resource'].v.id
+            )
             new_statement_ids.append(insert_id)
             intermediate.append((insert_id, main_statement))
 
         for insert_id, main_statement in intermediate:
-            for key_str, values in main_statement.items():
-                if ':' in key_str:
-                    pass
-                else:
-                    key_id = self._get_schema_attribute(schema_id, key_str)
-                if type(values) != list:
-                    values = [values]
-                for value_str in values:
-                    create_args = {'subject_id': insert_id, 'predicate_id': key_id}
-                    if ':' in value_str:
-                        v = Value(value_str)
-                        create_args[v.column_name] = v.db_value()
-                    else:
-                        create_args['object_statement_id'] = self._get_schema_attribute(schema_id, value_str)
+            for p_str, o_strs in main_statement.items():
+                predicate = Value(p_str) if ':' in p_str else schema[p_str]
+                if type(o_strs) != list:
+                    o_strs = [o_strs]
+                for o_str in o_strs:
+                    object_ = Value(o_str) if ':' in o_str else schema[o_str]
+                    create_args = {
+                        'subject_id': insert_id,
+                        'predicate_id': predicate.v.id,
+                        object_.column_name: object_.db_value(),
+                    }
                     new_id = self._create_statement(**create_args)
                     new_statement_ids.append(new_id)
 
-        transaction_id = self._create_statement(subject_id=None, predicate_id=schema['type'], object_statement_id=schema['Transaction'])
-        self._create_statement(subject_id=transaction_id, predicate_id=schema['created_at'], object_datetime=datetime.datetime.now())
-        self._create_statement(subject_id=transaction_id, predicate_id=schema['statement_count'], object_integer=len(new_statement_ids))
-        for s_id in new_statement_ids:
-            self._create_statement(subject_id=transaction_id, predicate_id=schema['transaction_contains'], object_statement_id=s_id)
+        return new_statement_ids
 
-        print("new", new_statement_ids)
-        self.db.commit()
+    def _create_transaction(self, schema, statement_ids):
+        transaction_id = self._create_statement(
+            subject_id=None,
+            predicate_id=schema['type'].v.id,
+            object_statement_id=schema['Transaction'].v.id
+        )
+        self._create_statement(
+            subject_id=transaction_id,
+            predicate_id=schema['created_at'].v.id,
+            object_datetime=datetime.datetime.now()
+        )
+        self._create_statement(
+            subject_id=transaction_id,
+            predicate_id=schema['statement_count'].v.id,
+            object_integer=len(statement_ids)
+        )
+        for s_id in statement_ids:
+            self._create_statement(
+                subject_id=transaction_id,
+                predicate_id=schema['transaction_contains'].v.id,
+                object_statement_id=s_id
+            )
 
     def _get_schema_attribute(self, schema_id, attribute_name):
         where = and_(self.t.c.predicate_id==schema_id, self.t.c.object_string==attribute_name)
@@ -190,8 +251,13 @@ class SimpleStatementController(BaseController):
         statement.id = result.fetchone()['id']
         return statement.id
 
-    def _fill_statement_ids(self, statements):
+    def _fill_ids(self, statements):
+        # TODO: Fetch all in one query
+        if type(statements) != list:
+            statements = [statements]
         for statement in statements:
+            if type(statement) == Value:
+                statement = statement.v
             if type(statement) != Statement:
                 continue
             s = select([self.t.c.id], limit=1).where(self.t.c.uuid==statement.uuid)
