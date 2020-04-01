@@ -53,6 +53,7 @@ def main(settings):
     config.add_static_view(name='static', path='../../webclient/static')
 
     config.add_route('find_statements', '/statements', request_method='GET')
+    config.add_route('create_statements', '/statements', request_method='POST')
     config.add_route('get_schema', '/schemas/{reference}', request_method='GET')
     config.add_route('establish_schema', '/schemas/{reference}', request_method='POST')
     config.add_route('schema_transaction', '/schemas/{reference}/statements', request_method='POST')

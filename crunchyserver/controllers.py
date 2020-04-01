@@ -97,6 +97,41 @@ class StatementController(BaseController):
 
         return schema
 
+    @view_config(route_name='create_statements', renderer='json')
+    def create_statements(self):
+        insert_ids = self._create_statements(self.request.json_body)
+        self.db.commit()
+
+    def _create_statements(self, rows):
+        insert_ids = []
+        for row in rows:
+            insert = self.t.insert().values(uuid=uuid4())
+            (insert_id,) = self.db.execute(insert).inserted_primary_key
+            insert_ids.append(insert_id)
+
+        for idx, row in enumerate(rows):
+            statement_values = []
+            for e in row:
+                if type(e) == int:
+                    statement_values.append(insert_ids[e])
+                    column_name = 'object_statement_id'
+                else:
+                    v = Value(e)
+                    if v.vtype == 's':
+                        self._fill_ids(v)
+                    statement_values.append(v.db_value())
+                    column_name = v.column_name
+
+            values = {
+                'subject_id': statement_values[0],
+                'predicate_id': statement_values[1],
+                column_name: statement_values[2],
+            }
+            where = self.t.c.id==insert_ids[idx]
+            update = self.t.update().where(where).values(values)
+            self.db.execute(update)
+        return insert_ids
+
     def _process_filter(self, key_string, value_string):
         key = Value(key_string)
 
@@ -155,7 +190,8 @@ class StatementController(BaseController):
     def schema_transaction(self):
         schema_reference = Value(self.request.matchdict['reference'])
         schema = self._establish_schema(schema_reference, self.default_schema_keys)
-        new_statement_ids = self._schema_transaction(schema, self.request.json_body)
+        #new_statement_ids = self._schema_transaction(schema, self.request.json_body)
+        new_statement_ids = self._create_statements(self.request.json_body)
         self._create_transaction(schema, new_statement_ids)
         print("new", new_statement_ids)
         self.db.commit()
