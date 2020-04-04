@@ -116,7 +116,7 @@ class StorageController(BaseController):
             'mtime': datetime.datetime.fromisoformat(rf['mtime']),
             'lastverify': datetime.datetime.fromisoformat(rf['lastverify']),
             'size': rf['size'],
-        } for path, rf in self.request.json_body.items() if rf is not None]
+        } for path, rf in files_info.items() if rf is not None]
 
         # Using multi insert seems orders of magnitude faster on Postgres than
         # multiparam/executemany inserts.
@@ -124,7 +124,7 @@ class StorageController(BaseController):
         if len(new_checksums):
             self.db.execute(blob_table.insert().values([{'sha256': c} for c in new_checksums]))
 
-        delete_paths = [os.fsencode(path) for path, rf in self.request.json_body.items() if rf is None]
+        delete_paths = [os.fsencode(path) for path, rf in files_info.items() if rf is None]
         if len(delete_paths):
             delete = file_table.delete().where(file_table.c.volume_id==volume['id']).\
                 where(file_table.c.path.in_(delete_paths))
