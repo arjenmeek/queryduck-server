@@ -6,6 +6,7 @@ import urllib
 from pyramid.view import view_config
 from pyramid.httpexceptions import HTTPNotFound
 from sqlalchemy.sql import select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from ..controllers import BaseController
 
@@ -103,6 +104,10 @@ class StorageController(BaseController):
     @view_config(route_name='mutate_volume_files', renderer='json')
     def mutate_volume_files(self):
         volume = self._get_volume(self.request.matchdict['volume_reference'])
+        self._mutate_volume_files(volume, self.request.json_body)
+        return {}
+
+    def _mutate_volume_files(self, volume, files_info):
 
         files = [{
             'volume_id': volume.id,
@@ -119,18 +124,22 @@ class StorageController(BaseController):
         if len(new_checksums):
             self.db.execute(blob_table.insert().values([{'sha256': c} for c in new_checksums]))
 
-        # Also delete all files that need updating, so we can simply insert them again.
-        delete_paths = [os.fsencode(path) for path, rf in self.request.json_body.items()
-            if rf is None or not rf['new']]
+        delete_paths = [os.fsencode(path) for path, rf in self.request.json_body.items() if rf is None]
         if len(delete_paths):
-            delete = file_table.delete().where(file_table.c.volume_id==volume['id']).where(file_table.c.path.in_(delete_paths))
+            delete = file_table.delete().where(file_table.c.volume_id==volume['id']).\
+                where(file_table.c.path.in_(delete_paths))
             self.db.execute(delete)
 
-        # (Re-)insert files in bulk
+        # Upsert files in bulk
         files = self._process_files(files)
-        self.db.execute(file_table.insert().values(files))
-
-        return {}
+        ins = pg_insert(file_table).values(files)
+        upd = ins.on_conflict_do_update(index_elements=['volume_id', 'path'], set_={
+            'blob_id': ins.excluded.blob_id,
+            'size': ins.excluded.size,
+            'mtime':  ins.excluded.mtime,
+            'lastverify': ins.excluded.lastverify,
+        })
+        self.db.execute(upd)
 
     @view_config(route_name='get_volume_file', renderer='json')
     def get_volume_file(self):
