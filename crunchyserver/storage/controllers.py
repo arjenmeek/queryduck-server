@@ -5,79 +5,77 @@ import urllib
 
 from pyramid.view import view_config
 from pyramid.httpexceptions import HTTPNotFound
-
-from sqlalchemy.orm import joinedload
+from sqlalchemy.sql import select
 
 from ..controllers import BaseController
 
-from ..models import Statement, Volume, Blob, File
+from ..models import statement_table, volume_table, blob_table, file_table
 
 
-class VolumeController(BaseController):
+class StorageController(BaseController):
+
+    max_limit = 10000
 
     @view_config(route_name='get_volume', renderer='json')
     def get_volume(self):
-        volume = self.db.query(Volume).filter_by(reference=self.request.matchdict['reference']).one()
-        return volume
+        ref = self.request.matchdict['reference']
+        s = select([volume_table]).where(volume_table.c.reference==ref)
+        volume = self.db.execute(s).fetchone()
+        return dict(volume)
 
     @view_config(route_name='list_volumes', renderer='json')
     def list_volumes(self):
-        volumes = self.db.query(Volume).all()
+        s = select([volume_table])
+        volumes = [dict(v) for v in self.db.execute(s)]
         return volumes
 
     @view_config(route_name='create_volume', renderer='json')
     def create_volume(self):
-        volume = Volume()
-        volume.reference = self.request.matchdict['reference']
-        self.db.add(volume)
-        self.db.commit()
-        return volume
+        ref = self.request.matchdict['reference']
+        ins = volume_table.insert().values(reference=ref)
+        (insert_id,) = self.db.execute(ins).inserted_primary_key
+        return insert_id
 
     @view_config(route_name='delete_volume', renderer='json')
     def delete_volume(self):
-        volume = self.db.query(Volume).filter_by(reference=self.request.matchdict['reference']).one()
-        self.db.delete(volume)
-        self.db.commit()
+        ref = self.request.matchdict['reference']
+        delete = volume_table.delete().where(volume_table.c.reference==ref)
+        self.db.execute(delete)
         return {}
 
-
-class BlobController(BaseController):
-
-    @view_config(route_name='get_blob', renderer='json')
-    def get_blob(self):
-        return [self.request.matchdict['reference']]
-
-    @view_config(route_name='list_blobs', renderer='json')
-    def list_blobs(self):
-        blobs = self.db.query(Blob).all()
-        return blobs
-
-    @view_config(route_name='create_blob', renderer='json')
-    def create_blob(self):
-        blob_data = self.request.json_body['blob']
-        print(blob_data)
-        blob = Blob()
-        self.db.add(blob)
-        return blob
-
-
-class FileController(BaseController):
-
-    max_limit = 10000
+    def _get_volume(self, reference):
+        s = select([volume_table]).where(volume_table.c.reference==reference)
+        volume = self.db.execute(s).fetchone()
+        return volume
 
     @view_config(route_name='list_volume_files', renderer='json')
     def list_volume_files(self):
+        volume = self._get_volume(self.request.matchdict['volume_reference'])
         limit = 1000
         if 'limit' in self.request.GET:
             limit = min(int(self.request.GET['limit']), self.max_limit)
 
-        volume = self.db.query(Volume).filter(Volume.reference==self.request.matchdict['volume_reference']).one()
+        j = file_table.join(blob_table, file_table.c.blob_id==blob_table.c.id)
+        s = select([file_table, blob_table.c.sha256]).select_from(j).\
+            where(file_table.c.volume_id==volume['id'])
 
-        q = self.db.query(File).filter(File.volume==volume).options(joinedload(File.blob)).order_by(File.path)
+
         if 'after' in self.request.GET:
             after = base64.b64decode(self.request.GET['after'])
-            q = q.filter(File.path > after)
-        files = q.order_by(File.path).limit(limit).all()
+            #after = self.request.GET['after']
+            s = s.where(file_table.c.path > after)
+#            q = q.filter(File.path > after)
+#        files = q.order_by(File.path).limit(limit).all()
+
+        s = s.order_by(file_table.c.path).limit(limit)
+
+        files = [{
+            'path': os.fsdecode(r[file_table.c.path]),
+            'size': r[file_table.c.size],
+            'mtime': r[file_table.c.mtime].isoformat(),
+            'lastverify': r[file_table.c.lastverify].isoformat(),
+            'sha256': base64.b64encode(r[blob_table.c.sha256]).decode('utf-8')
+        } for r in self.db.execute(s)]
 
         response = {
             'results': files,
@@ -88,14 +86,15 @@ class FileController(BaseController):
     def _process_file_blobs(self, files):
         """Determines which required blobs don't exist yet, and construct them."""
         file_checksums = {f['sha256'] for f in files}
-        db_checksums = {r for (r,) in self.db.query(Blob.sha256).filter(Blob.sha256.in_(file_checksums)).all()}
+        s = select([blob_table.c.sha256]).where(blob_table.c.sha256.in_(file_checksums))
+        db_checksums = {r for (r,) in self.db.execute(s)}
         new_checksums = file_checksums - db_checksums
         return new_checksums
 
     def _process_files(self, files):
         file_checksums = {f['sha256'] for f in files}
-        db_fields = self.db.query(Blob.id, Blob.sha256).filter(Blob.sha256.in_(file_checksums)).all()
-        blob_ids = {blob_checksum: blob_id for blob_id, blob_checksum in db_fields}
+        s = select([blob_table.c.id, blob_table.c.sha256]).where(blob_table.c.sha256.in_(file_checksums))
+        blob_ids = {blob_checksum: blob_id for blob_id, blob_checksum in self.db.execute(s)}
         for f in files:
             f['blob_id'] = blob_ids[f['sha256']]
             del f['sha256']
@@ -103,33 +102,33 @@ class FileController(BaseController):
 
     @view_config(route_name='mutate_volume_files', renderer='json')
     def mutate_volume_files(self):
-        volume = self.db.query(Volume).filter(Volume.reference==self.request.matchdict['volume_reference']).one()
+        volume = self._get_volume(self.request.matchdict['volume_reference'])
 
         files = [{
             'volume_id': volume.id,
             'path': os.fsencode(path),
             'sha256': base64.b64decode(rf['sha256']),
-            'mtime': datetime.datetime.strptime(rf['mtime'], "%Y-%m-%dT%H:%M:%S.%f"),
-            'lastverify': datetime.datetime.strptime(rf['lastverify'], "%Y-%m-%dT%H:%M:%S.%f"),
+            'mtime': datetime.datetime.fromisoformat(rf['mtime']),
+            'lastverify': datetime.datetime.fromisoformat(rf['lastverify']),
             'size': rf['size'],
         } for path, rf in self.request.json_body.items() if rf is not None]
 
+        # Using multi insert seems orders of magnitude faster on Postgres than
+        # multiparam/executemany inserts.
         new_checksums = self._process_file_blobs(files)
+        if len(new_checksums):
+            self.db.execute(blob_table.insert().values([{'sha256': c} for c in new_checksums]))
 
-        # Using multi insert seems orders of magnitude faster on Postgres than multiparam/executemany inserts.
-        self.db.connection().execute(Blob.__table__.insert().values([{'sha256': c} for c in new_checksums]))
-
-        # We also delete all files that need updating, so we can simply insert them again.
+        # Also delete all files that need updating, so we can simply insert them again.
         delete_paths = [os.fsencode(path) for path, rf in self.request.json_body.items()
             if rf is None or not rf['new']]
-        delete_query = self.db.query(File).filter(File.volume==volume).filter(File.path.in_(delete_paths))
-        delete_query.delete(synchronize_session=False)
+        if len(delete_paths):
+            delete = file_table.delete().where(file_table.c.volume_id==volume['id']).where(file_table.c.path.in_(delete_paths))
+            self.db.execute(delete)
 
         # (Re-)insert files in bulk
         files = self._process_files(files)
-        self.db.connection().execute(File.__table__.insert().values(files))
-
-        self.db.commit()
+        self.db.execute(file_table.insert().values(files))
 
         return {}
 

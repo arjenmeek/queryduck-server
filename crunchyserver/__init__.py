@@ -4,9 +4,8 @@ from pyramid.authorization import ACLAuthorizationPolicy
 from pyramid.security import ALL_PERMISSIONS, Allow, Authenticated, forget
 from pyramid.view import forbidden_view_config, view_config
 from pyramid.httpexceptions import HTTPUnauthorized
-from sqlalchemy import engine_from_config
 
-from .models import Base, init_model
+from .models import init_db
 
 def forbidden_view(request):
     """Trigger client to send basic HTTP auth info"""
@@ -32,14 +31,12 @@ def main(settings):
     config = Configurator()
     config.include('pyramid_services')
 
-    engine = engine_from_config(settings)
-    Base.metadata.create_all(engine)
-    dbmaker = init_model(settings)
+    engine = init_db(settings)
 
     def dbsession_factory(context, request):
-        """Initialize an SQLAlchemy database session."""
-        dbsession = dbmaker()
-        return dbsession
+        """Initialize an SQLAlchemy database connection."""
+        conn = engine.connect()
+        return conn
 
     config.register_service_factory(dbsession_factory, name='db')
 
