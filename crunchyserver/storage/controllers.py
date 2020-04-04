@@ -1,15 +1,12 @@
 import base64
 import datetime
 import os
-import urllib
 
 from pyramid.view import view_config
-from pyramid.httpexceptions import HTTPNotFound
 from sqlalchemy.sql import select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from ..controllers import BaseController
-
 from ..models import statement_table, volume_table, blob_table, file_table
 
 
@@ -52,9 +49,6 @@ class StorageController(BaseController):
     @view_config(route_name='list_volume_files', renderer='json')
     def list_volume_files(self):
         volume = self._get_volume(self.request.matchdict['volume_reference'])
-        limit = 1000
-        if 'limit' in self.request.GET:
-            limit = min(int(self.request.GET['limit']), self.max_limit)
 
         j = file_table.join(blob_table, file_table.c.blob_id==blob_table.c.id)
         s = select([file_table, blob_table.c.sha256]).select_from(j).\
@@ -64,14 +58,13 @@ class StorageController(BaseController):
             paths = [base64.b64decode(p) for p in self.request.GET.getall('path')]
             s = s.where(file_table.c.path.in_(paths))
 
-
         if 'after' in self.request.GET:
             after = base64.b64decode(self.request.GET['after'])
-            #after = self.request.GET['after']
             s = s.where(file_table.c.path > after)
-#            q = q.filter(File.path > after)
-#        files = q.order_by(File.path).limit(limit).all()
 
+        limit = 1000
+        if 'limit' in self.request.GET:
+            limit = min(int(self.request.GET['limit']), self.max_limit)
         s = s.order_by(file_table.c.path).limit(limit)
 
         files = [{
@@ -82,11 +75,10 @@ class StorageController(BaseController):
             'sha256': base64.b64encode(r[blob_table.c.sha256]).decode('utf-8')
         } for r in self.db.execute(s)]
 
-        response = {
+        return {
             'results': files,
             'limit': limit,
         }
-        return response
 
     def _process_file_blobs(self, files):
         """Determines which required blobs don't exist yet, and construct them."""
@@ -112,7 +104,6 @@ class StorageController(BaseController):
         return {}
 
     def _mutate_volume_files(self, volume, files_info):
-
         files = [{
             'volume_id': volume.id,
             'path': os.fsencode(path),
@@ -144,11 +135,3 @@ class StorageController(BaseController):
             'lastverify': ins.excluded.lastverify,
         })
         self.db.execute(upd)
-
-    @view_config(route_name='get_volume_file', renderer='json')
-    def get_volume_file(self):
-        volume = self.db.query(Volume).filter(Volume.reference==self.request.matchdict['volume_reference']).one()
-        file_path = base64.b64decode(self.request.matchdict['file_path'], '-_')
-        file_ = self.db.query(File).filter(File.volume==volume).filter(File.path==file_path).first()
-        print(file_)
-        return file_

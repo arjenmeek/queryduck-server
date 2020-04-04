@@ -1,10 +1,10 @@
 from sqlalchemy import (
     engine_from_config,
+    Column,
     Table,
     MetaData,
     BigInteger,
     Boolean,
-    Column,
     DateTime,
     Float,
     ForeignKey,
@@ -17,7 +17,6 @@ from sqlalchemy.dialects.postgresql import (
     BYTEA,
     UUID,
 )
-
 
 def init_db(settings):
     engine = engine_from_config(settings)

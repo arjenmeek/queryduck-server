@@ -1,15 +1,12 @@
-import datetime
 import traceback
 
-from collections import defaultdict
-from uuid import UUID, uuid4
+from datetime import datetime as dt
+from uuid import uuid4
 
 from pyramid.view import view_config
-
 from sqlalchemy import and_
 from sqlalchemy.sql import select
 
-from crunchylib.exceptions import GeneralError, NotFoundError
 from crunchylib.value import Statement, Value
 
 from .models import statement_table
@@ -17,7 +14,6 @@ from .models import statement_table
 
 @view_config(context=Exception, renderer='json')
 def error_view(e, request):
-    #log or do other stuff to exc...
     print(traceback.format_exc())
     return {}
 
@@ -152,12 +148,12 @@ class StatementController(BaseController):
             self._fill_ids([k.v, v.v])
 
             a = self.t.alias()
-            select_from = select_from.join(a, and_(a.c.subject_id==self.t.c.id, a.c.predicate_id==k.v.id), isouter=True)
+            select_from = select_from.join(a,
+                and_(a.c.subject_id==self.t.c.id, a.c.predicate_id==k.v.id), isouter=True)
             wheres.append(v.column_compare(op, a.c))
         s = select([self.t.c.id, self.t.c.uuid]).select_from(select_from).where(and_(*wheres))
         results = self.db.execute(s)
         statements = [Statement(uuid_=r_uuid, id_=r_id) for r_id, r_uuid in results]
-        #statements_by_id = {r_id: defaultdict(list, uuid=str(r_uuid)) for r_id, r_uuid in results}
         return statements
 
     def _add_statement_values(self, statements):
@@ -190,7 +186,6 @@ class StatementController(BaseController):
     def schema_transaction(self):
         schema_reference = Value(self.request.matchdict['reference'])
         schema = self._establish_schema(schema_reference, self.default_schema_keys)
-        #new_statement_ids = self._schema_transaction(schema, self.request.json_body)
         new_statement_ids = self._create_statements(self.request.json_body)
         self._create_transaction(schema, new_statement_ids)
         print("new", new_statement_ids)
@@ -234,7 +229,7 @@ class StatementController(BaseController):
         self._create_statement(
             subject_id=transaction_id,
             predicate_id=schema['created_at'].v.id,
-            object_datetime=datetime.datetime.now()
+            object_datetime=dt.now()
         )
         self._create_statement(
             subject_id=transaction_id,
