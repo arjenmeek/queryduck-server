@@ -60,6 +60,10 @@ class StorageController(BaseController):
         s = select([file_table, blob_table.c.sha256]).select_from(j).\
             where(file_table.c.volume_id==volume['id'])
 
+        if 'path' in self.request.GET:
+            paths = [base64.b64decode(p) for p in self.request.GET.getall('path')]
+            s = s.where(file_table.c.path.in_(paths))
+
 
         if 'after' in self.request.GET:
             after = base64.b64decode(self.request.GET['after'])
