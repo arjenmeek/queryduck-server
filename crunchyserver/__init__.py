@@ -29,16 +29,23 @@ def main(settings):
     """Create and return a WSGI application."""
 
     config = Configurator()
-    config.include('pyramid_services')
+    config.registry.engine = init_db(settings)
 
-    engine = init_db(settings)
+    def db(request):
+        connection = request.registry.engine.connect()
+        transaction = connection.begin()
 
-    def dbsession_factory(context, request):
-        """Initialize an SQLAlchemy database connection."""
-        conn = engine.connect()
-        return conn
+        def cleanup(request):
+            if request.exception is not None:
+                transaction.rollback()
+            else:
+                transaction.commit()
+            connection.close()
+        request.add_finished_callback(cleanup)
 
-    config.register_service_factory(dbsession_factory, name='db')
+        return connection
+
+    config.add_request_method(db, reify=True)
 
     # Configure authentication / authorization
     authn_policy = BasicAuthAuthenticationPolicy(check_credentials)

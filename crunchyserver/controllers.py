@@ -28,7 +28,7 @@ class BaseController(object):
     def __init__(self, request):
         """Make relevant services available."""
         self.request = request
-        self.db = self.request.find_service(name='db')
+        self.db = self.request.db
 
 
 class StatementController(BaseController):
@@ -48,7 +48,7 @@ class StatementController(BaseController):
     def __init__(self, request):
         """Make relevant services available."""
         self.request = request
-        self.db = self.request.find_service(name='db')
+        self.db = self.request.db
         self.t = statement_table
 
     @view_config(route_name='get_schema', renderer='json')

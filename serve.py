@@ -9,7 +9,7 @@ from crunchyserver import main
 
 
 with open('config.yml', 'r') as f:
-    config = yaml.load(f.read())
+    config = yaml.load(f.read(), Loader=yaml.SafeLoader)
 
 app = main({
     'sqlalchemy.url': config['db']['url'],
