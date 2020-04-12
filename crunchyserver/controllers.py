@@ -4,7 +4,7 @@ from datetime import datetime as dt
 from uuid import uuid4
 
 from pyramid.view import view_config
-from sqlalchemy import and_
+from sqlalchemy import and_, or_
 from sqlalchemy.sql import select
 
 from crunchylib.value import Statement, Blob, Value, ValueList
@@ -147,6 +147,8 @@ class StatementController(BaseController):
         select_from = self.t
         wheres = []
         for key_string in filters.keys():
+            if key_string in ('returnstyle', 'ref'):
+                continue
             value_strings = filters.getall(key_string)
             k, op, v = self._process_filter(key_string, value_strings)
             self._fill_ids([k, v])
@@ -155,9 +157,11 @@ class StatementController(BaseController):
             select_from = select_from.join(a,
                 and_(a.c.subject_id==self.t.c.id, a.c.predicate_id==k.v.id), isouter=True)
             wheres.append(v.column_compare(op, a.c))
+        if 'ref' in filters:
+            v = Value(filters['ref'])
+            wheres.append(self.t.c.uuid==v.v.uuid)
         s = select([self.t.c.id, self.t.c.uuid]).select_from(select_from).where(and_(*wheres))
         s = s.distinct(self.t.c.id)
-        print(s)
         results = self.db.execute(s)
         statements = [Statement(uuid_=r_uuid, id_=r_id) for r_id, r_uuid in results]
         return statements
@@ -182,13 +186,55 @@ class StatementController(BaseController):
             row_object = Value(db_columns=self.t.c, db_row=row, db_entities=entities)
             statements_by_id[subject_id].attributes[predicate_key.serialize()].append(row_object)
 
+    def _get_statement_values(self, statements):
+        """Modify set of statement dicts in place to add values"""
+        subject = self.t.alias()
+        predicate = self.t.alias()
+        object_statement = self.t.alias()
+        statement_ids = [s.id for s in statements]
+
+        select_from = self.t.join(subject, subject.c.id==self.t.c.subject_id, isouter=True)\
+            .join(predicate, predicate.c.id==self.t.c.predicate_id, isouter=True)\
+            .join(object_statement, object_statement.c.id==self.t.c.object_statement_id, isouter=True)\
+            .join(blob_table, blob_table.c.id==self.t.c.object_blob_id, isouter=True)
+        where = or_(self.t.c.subject_id.in_(statement_ids), self.t.c.id.in_(statement_ids))
+
+        s = select([
+            self.t,
+            subject.c.uuid,
+            predicate.c.uuid,
+            object_statement.c.uuid,
+            blob_table.c.sha256
+        ]).select_from(select_from).where(where)
+
+        statement_dict = {}
+        for row in self.db.execute(s):
+            entities = {'s': object_statement, 'blob': blob_table}
+            elements = (
+                Value.native(Statement(uuid_=row[subject.c.uuid])).serialize(),
+                Value.native(Statement(uuid_=row[predicate.c.uuid])).serialize(),
+                Value(db_columns=self.t.c, db_row=row, db_entities=entities).serialize(),
+            )
+            key = Value.native(Statement(uuid_=row[self.t.c.uuid])).serialize()
+            statement_dict[key] = elements
+        return statement_dict
+
+
     @view_config(route_name='find_statements', renderer='json')
     def find_statements(self):
         """Return multiple Statements based on filters."""
         filters = self.request.GET
         statements = self._find_statements(filters=filters)
-        self._add_statement_values(statements)
-        return statements
+        if not 'returnstyle' in self.request.GET or self.request.GET['returnstyle'] == 'nested':
+            self._add_statement_values(statements)
+            return statements
+        elif self.request.GET['returnstyle'] == 'simple':
+            return [Value.native(s).serialize() for s in statements]
+        elif self.request.GET['returnstyle'] == 'split':
+            return {
+                'references': [Value.native(s).serialize() for s in statements],
+                'statements': self._get_statement_values(statements),
+            }
 
     @view_config(route_name='schema_transaction', renderer='json', permission='create')
     def schema_transaction(self):
