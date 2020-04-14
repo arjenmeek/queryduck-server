@@ -7,9 +7,10 @@ from pyramid.view import view_config
 from sqlalchemy import and_, or_
 from sqlalchemy.sql import select
 
-from crunchylib.value import Statement, Blob, Value, ValueList
+from crunchylib.types import Blob, Statement
+from crunchylib.value import Value, ValueList, serialize, deserialize, process_db_row, column_compare
 
-from .models import statement_table, blob_table
+from .models import statement_table, blob_table, file_table, volume_table
 
 
 @view_config(context=Exception, renderer='json')
@@ -127,7 +128,6 @@ class StatementController(BaseController):
         return insert_ids
 
     def _process_filter(self, key_string, value_strings):
-        print(value_strings)
         if key_string.startswith('_'):
             op, k_part = key_string[1:].split('_', 1)
             key = Value(k_part)
@@ -146,7 +146,7 @@ class StatementController(BaseController):
     def _find_statements(self, filters):
         select_from = self.t
         wheres = []
-        for key_string in filters.keys():
+        for key_string in set(filters.keys()):
             if key_string in ('returnstyle', 'ref'):
                 continue
             value_strings = filters.getall(key_string)
@@ -187,38 +187,84 @@ class StatementController(BaseController):
             statements_by_id[subject_id].attributes[predicate_key.serialize()].append(row_object)
 
     def _get_statement_values(self, statements):
-        """Modify set of statement dicts in place to add values"""
-        subject = self.t.alias()
-        predicate = self.t.alias()
-        object_statement = self.t.alias()
+        su = self.t.alias()
+        pr = self.t.alias()
+        ob = self.t.alias()
         statement_ids = [s.id for s in statements]
 
-        select_from = self.t.join(subject, subject.c.id==self.t.c.subject_id, isouter=True)\
-            .join(predicate, predicate.c.id==self.t.c.predicate_id, isouter=True)\
-            .join(object_statement, object_statement.c.id==self.t.c.object_statement_id, isouter=True)\
-            .join(blob_table, blob_table.c.id==self.t.c.object_blob_id, isouter=True)
+        select_from = self.t.join(su, su.c.id==self.t.c.subject_id, isouter=True)\
+            .join(pr, pr.c.id==self.t.c.predicate_id, isouter=True)\
+            .join(ob, ob.c.id==self.t.c.object_statement_id, isouter=True)\
+            .join(blob_table, blob_table.c.id==self.t.c.object_blob_id, isouter=True)\
+            .join(file_table, file_table.c.blob_id==self.t.c.object_blob_id, isouter=True)\
+            .join(volume_table, volume_table.c.id==file_table.c.volume_id, isouter=True)
         where = or_(self.t.c.subject_id.in_(statement_ids), self.t.c.id.in_(statement_ids))
 
         s = select([
             self.t,
-            subject.c.uuid,
-            predicate.c.uuid,
-            object_statement.c.uuid,
-            blob_table.c.sha256
+            su.c.uuid,
+            pr.c.uuid,
+            ob.c.uuid,
+            blob_table.c.sha256,
+            file_table.c.path,
+            volume_table.c.reference,
         ]).select_from(select_from).where(where)
+        s = s.distinct(self.t.c.id)
 
         statement_dict = {}
         for row in self.db.execute(s):
-            entities = {'s': object_statement, 'blob': blob_table}
+            entities = {
+                's': ob,
+                'blob': blob_table,
+                'volume': volume_table,
+                'file': file_table,
+            }
             elements = (
-                Value.native(Statement(uuid_=row[subject.c.uuid])).serialize(),
-                Value.native(Statement(uuid_=row[predicate.c.uuid])).serialize(),
-                Value(db_columns=self.t.c, db_row=row, db_entities=entities).serialize(),
+                serialize(Statement(uuid_=row[su.c.uuid])),
+                serialize(Statement(uuid_=row[pr.c.uuid])),
+                serialize(process_db_row(row, self.t.c, entities)[0]),
             )
-            key = Value.native(Statement(uuid_=row[self.t.c.uuid])).serialize()
+            key = serialize(Statement(uuid_=row[self.t.c.uuid]))
             statement_dict[key] = elements
         return statement_dict
 
+
+    @view_config(route_name='query_statements', renderer='json')
+    def query_statements(self):
+        query = self.request.json_body
+        filters = query['filters'] if 'filters' in query else []
+        statements = self._query_statements(filters)
+
+        result = {
+            'references': [serialize(s) for s in statements],
+            'statements': self._get_statement_values(statements),
+        }
+        return result
+
+    def _query_statements(self, filters):
+        select_from = self.t
+        wheres = []
+        for f in filters:
+            k = deserialize(f['key'])
+            op = f['op'] if 'op' in f else 'eq'
+            if type(f['value']) == list:
+                v = [deserialize(e) for e in f['value']]
+            elif f['value'] is None:
+                v = None
+            else:
+                v = deserialize(f['value'])
+            self._fill_ids([k, v])
+            print(k, op, v)
+
+            a = self.t.alias()
+            select_from = select_from.join(a,
+                and_(a.c.subject_id==self.t.c.id, a.c.predicate_id==k.id), isouter=True)
+            wheres.append(column_compare(v, op, a.c))
+        s = select([self.t.c.id, self.t.c.uuid]).select_from(select_from).where(and_(*wheres))
+        s = s.distinct(self.t.c.id)
+        results = self.db.execute(s)
+        statements = [Statement(uuid_=r_uuid, id_=r_id) for r_id, r_uuid in results]
+        return statements
 
     @view_config(route_name='find_statements', renderer='json')
     def find_statements(self):
@@ -307,6 +353,7 @@ class StatementController(BaseController):
 
     def _fill_ids(self, statements):
         # TODO: Fetch all in one query
+        print('fill', statements)
         if type(statements) != list:
             statements = [statements]
         for statement in statements:
@@ -315,6 +362,8 @@ class StatementController(BaseController):
             elif type(statement) == ValueList:
                 self._fill_ids(statement.values)
                 break
+            elif type(statement) == list:
+                self._fill_ids(statement)
             if type(statement) not in (Statement, Blob):
                 continue
             if type(statement) == Statement:
