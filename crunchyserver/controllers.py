@@ -8,6 +8,7 @@ from sqlalchemy import and_, or_
 from sqlalchemy.sql import select
 
 from crunchylib.types import Blob, Statement, serialize, deserialize, process_db_row, column_compare, prepare_for_db
+from crunchylib.utility import transform_doc
 
 from .models import statement_table, blob_table, file_table, volume_table
 
@@ -193,8 +194,7 @@ class StatementController(BaseController):
     @view_config(route_name='query_statements', renderer='json')
     def query_statements(self):
         query = self.request.json_body
-        filters = query['filters'] if 'filters' in query else []
-        statements = self._query_statements(filters)
+        statements = self._query_statements(query['query'])
 
         result = {
             'references': [serialize(s) for s in statements],
@@ -202,25 +202,42 @@ class StatementController(BaseController):
         }
         return result
 
-    def _query_statements(self, filters):
+    def _prepare_query(self, query):
+        """Deserialize any values inside the query, and add database IDs."""
+        values = []
+        def deserialize_reference(ref):
+            if ':' in ref:
+                v = deserialize(ref)
+                values.append(v)
+            else:
+                v = ref
+            return v
+        query = transform_doc(query, deserialize_reference)
+        self._fill_ids(values)
+        return query
+
+    def _query_statements(self, query):
+        query = self._prepare_query(query)
+
         select_from = self.t
         wheres = []
-        for f in filters:
-            k = deserialize(f['key'])
-            op = f['op'] if 'op' in f else 'eq'
-            if type(f['value']) == list:
-                v = [deserialize(e) for e in f['value']]
-            elif f['value'] is None:
-                v = None
-            else:
-                v = deserialize(f['value'])
-            self._fill_ids([k, v])
+        stack = [(query, self.t)]
+        while stack:
+            q, t = stack.pop()
+            if type(q) == dict:
+                for k, v in q.items():
+                    if type(k) == Statement:
+                        a = self.t.alias()
+                        select_from = select_from.join(a,
+                            and_(a.c.subject_id==t.c.id,
+                                a.c.predicate_id==k.id),
+                            isouter=True)
+                        stack.append((v, a))
+                    else:
+                        wheres.append(column_compare(v, k, t.c))
+            elif type(q) == Statement:
+                    wheres.append(column_compare(q, 'eq', t.c))
 
-            a = self.t.alias()
-            select_from = select_from.join(a,
-                and_(a.c.subject_id==self.t.c.id, a.c.predicate_id==k.id),
-                isouter=True)
-            wheres.append(column_compare(v, op, a.c))
         s = select([self.t.c.id, self.t.c.uuid]).select_from(select_from)
         s = s.where(and_(*wheres)).distinct(self.t.c.id)
         results = self.db.execute(s)
@@ -299,7 +316,6 @@ class StatementController(BaseController):
 
     def _fill_ids(self, statements):
         # TODO: Fetch all in one query
-        print('fill', statements)
         if type(statements) != list:
             statements = [statements]
         for statement in statements:
