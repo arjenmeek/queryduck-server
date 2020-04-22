@@ -37,9 +37,45 @@ class StatementController(BaseController):
         self.db = self.request.db
         self.t = statement_table
 
+    ### View methods ###
+
     @view_config(route_name='create_statements', renderer='json')
     def create_statements(self):
         insert_ids = self._create_statements(self.request.json_body)
+
+    @view_config(route_name='get_statement', renderer='json')
+    def get_statement(self):
+        reference = self.request.matchdict['reference']
+        statement = deserialize(reference)
+        self._fill_ids(statement)
+        result = {
+            'reference': serialize(statement),
+            'statements': self._get_statement_values([statement]),
+        }
+        return result
+
+    @view_config(route_name='query_statements', renderer='json')
+    def query_statements(self):
+        query = self.request.json_body
+        statements = self._query_statements(query['query'])
+
+        result = {
+            'references': [serialize(s) for s in statements],
+            'statements': self._get_statement_values(statements),
+        }
+        return result
+
+    ### Worker methods ###
+
+    def _create_statement(self, **kwargs):
+        """Create a Statement with specified values. None values are changed to be self referential."""
+        insert = self.t.insert().values(uuid=uuid4())
+        (insert_id,) = self.db.execute(insert).inserted_primary_key
+        values = {k: (insert_id if v is None else v) for k, v in kwargs.items()}
+        where = self.t.c.id==insert_id
+        update = self.t.update().where(where).values(values)
+        self.db.execute(update)
+        return insert_id
 
     def _create_statements(self, rows):
         insert_ids = []
@@ -71,94 +107,20 @@ class StatementController(BaseController):
         return insert_ids
 
     def _get_statement_values(self, statements):
-        su = self.t.alias()
-        pr = self.t.alias()
-        ob = self.t.alias()
         statement_ids = [s.id for s in statements]
 
-        # If you're reading this and have suggestions on a cleaner style that
-        # doesn't exceed 80 columns, please let me know!
-        select_from = self.t\
-            .join(su,
-                su.c.id==self.t.c.subject_id, isouter=True)\
-            .join(pr,
-                pr.c.id==self.t.c.predicate_id, isouter=True)\
-            .join(ob,
-                ob.c.id==self.t.c.object_statement_id, isouter=True)\
-            .join(blob_table,
-                blob_table.c.id==self.t.c.object_blob_id, isouter=True)\
-            .join(file_table,
-                file_table.c.blob_id==self.t.c.object_blob_id, isouter=True)\
-            .join(volume_table,
-                volume_table.c.id==file_table.c.volume_id, isouter=True)
-
+        s, entities = self._select_full_statements(self.t)
 
         where = or_(self.t.c.subject_id.in_(statement_ids),
             self.t.c.id.in_(statement_ids))
-
-        s = select([
-            self.t,
-            su.c.uuid,
-            pr.c.uuid,
-            ob.c.uuid,
-            blob_table.c.sha256,
-            file_table.c.path,
-            volume_table.c.reference,
-        ]).select_from(select_from).where(where)
-        s = s.distinct(self.t.c.id)
+        s = s.where(where).distinct(self.t.c.id)
 
         statement_dict = {}
-        for row in self.db.execute(s):
-            entities = {
-                's': ob,
-                'blob': blob_table,
-                'volume': volume_table,
-                'file': file_table,
-            }
-            elements = (
-                serialize(Statement(uuid_=row[su.c.uuid])),
-                serialize(Statement(uuid_=row[pr.c.uuid])),
-                serialize(process_db_row(row, self.t.c, entities)[0]),
-            )
-            key = serialize(Statement(uuid_=row[self.t.c.uuid]))
-            statement_dict[key] = elements
+        results = self.db.execute(s)
+        for r in self._process_result_statements(results, entities):
+            ser = [serialize(e) for e in r]
+            statement_dict[ser[0]] = ser[1:]
         return statement_dict
-
-    @view_config(route_name='get_statement', renderer='json')
-    def get_statement(self):
-        reference = self.request.matchdict['reference']
-        statement = deserialize(reference)
-        self._fill_ids(statement)
-        result = {
-            'reference': serialize(statement),
-            'statements': self._get_statement_values([statement]),
-        }
-        return result
-
-    @view_config(route_name='query_statements', renderer='json')
-    def query_statements(self):
-        query = self.request.json_body
-        statements = self._query_statements(query['query'])
-
-        result = {
-            'references': [serialize(s) for s in statements],
-            'statements': self._get_statement_values(statements),
-        }
-        return result
-
-    def _prepare_query(self, query):
-        """Deserialize any values inside the query, and add database IDs."""
-        values = []
-        def deserialize_reference(ref):
-            if ':' in ref:
-                v = deserialize(ref)
-                values.append(v)
-            else:
-                v = ref
-            return v
-        query = transform_doc(query, deserialize_reference)
-        self._fill_ids(values)
-        return query
 
     def _query_statements(self, query):
         query = self._prepare_query(query)
@@ -189,15 +151,75 @@ class StatementController(BaseController):
             for r_id, r_uuid in results]
         return statements
 
-    def _create_statement(self, **kwargs):
-        """Create a Statement with specified values. None values are changed to be self referential."""
-        insert = self.t.insert().values(uuid=uuid4())
-        (insert_id,) = self.db.execute(insert).inserted_primary_key
-        values = {k: (insert_id if v is None else v) for k, v in kwargs.items()}
-        where = self.t.c.id==insert_id
-        update = self.t.update().where(where).values(values)
-        self.db.execute(update)
-        return insert_id
+    ### Helper methods ###
+
+    @staticmethod
+    def _select_full_statements(main):
+        """Construct a select() to fetch all necessary Statement fields."""
+        su = statement_table.alias()
+        pr = statement_table.alias()
+        ob = statement_table.alias()
+        entities = {
+            'main': main,
+            's': ob,
+            'su': su,
+            'pr': pr,
+            'ob': ob,
+            'blob': blob_table,
+            'volume': volume_table,
+            'file': file_table,
+        }
+
+        # If you're reading this and have suggestions on a cleaner style that
+        # doesn't exceed 80 columns, please let me know!
+        select_from = main\
+            .join(su, su.c.id==main.c.subject_id, isouter=True)\
+            .join(pr, pr.c.id==main.c.predicate_id, isouter=True)\
+            .join(ob, ob.c.id==main.c.object_statement_id, isouter=True)\
+            .join(blob_table,
+                blob_table.c.id==main.c.object_blob_id, isouter=True)\
+            .join(file_table,
+                file_table.c.blob_id==main.c.object_blob_id, isouter=True)\
+            .join(volume_table,
+                volume_table.c.id==file_table.c.volume_id, isouter=True)
+
+        s = select([
+            main,
+            su.c.uuid,
+            pr.c.uuid,
+            ob.c.uuid,
+            blob_table.c.sha256,
+            file_table.c.path,
+            volume_table.c.reference,
+        ]).select_from(select_from)
+        return s, entities
+
+    @staticmethod
+    def _process_result_statements(results, entities):
+        processed = []
+        for row in results:
+            elements = (
+                Statement(uuid_=row[entities['main'].c.uuid]),
+                Statement(uuid_=row[entities['su'].c.uuid]),
+                Statement(uuid_=row[entities['pr'].c.uuid]),
+                process_db_row(row, entities['main'].c, entities)[0],
+            )
+            processed.append(elements)
+        return processed
+
+    def _prepare_query(self, query):
+        """Deserialize any values inside the query, and add database IDs."""
+        values = []
+        def deserialize_reference(ref):
+            if ':' in ref:
+                v = deserialize(ref)
+                values.append(v)
+            else:
+                v = ref
+            return v
+        query = transform_doc(query, deserialize_reference)
+        self._fill_ids(values)
+        return query
 
     def _fill_ids(self, statements):
         # TODO: Fetch all in one query
