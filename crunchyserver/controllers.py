@@ -235,8 +235,8 @@ class StatementController(BaseController):
                         stack.append((v, a))
                     else:
                         wheres.append(column_compare(v, k, t.c))
-            elif type(q) == Statement:
-                    wheres.append(column_compare(q, 'eq', t.c))
+            else:
+                wheres.append(column_compare(q, 'eq', t.c))
 
         s = select([self.t.c.id, self.t.c.uuid]).select_from(select_from)
         s = s.where(and_(*wheres)).distinct(self.t.c.id)
