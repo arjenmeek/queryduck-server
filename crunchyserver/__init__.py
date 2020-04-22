@@ -77,6 +77,7 @@ def main(settings):
     config.add_route('get_volume_file', '/volumes/{volume_reference}/files/{file_path}', request_method='GET')
 
     config.scan('.controllers')
+    config.scan('.schema.controllers')
     config.scan('.storage.controllers')
 
     app = config.make_wsgi_app()
