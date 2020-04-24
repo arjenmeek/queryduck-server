@@ -111,8 +111,14 @@ class StatementController(BaseController):
 
         s, entities = self._select_full_statements(self.t)
 
+        sub_alias = self.t.alias()
+        sub_from = self.t.join(sub_alias, sub_alias.c.id==self.t.c.subject_id)
+        sub = select([self.t.c.id]).select_from(sub_from)
+        sub = sub.where(sub_alias.c.subject_id.in_(statement_ids))
+
         where = or_(self.t.c.subject_id.in_(statement_ids),
-            self.t.c.id.in_(statement_ids))
+            self.t.c.id.in_(statement_ids),
+            self.t.c.id.in_(sub))
         s = s.where(where).distinct(self.t.c.id)
 
         statement_dict = {}
