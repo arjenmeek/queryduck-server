@@ -116,9 +116,18 @@ class StatementController(BaseController):
         sub = select([self.t.c.id]).select_from(sub_from)
         sub = sub.where(sub_alias.c.subject_id.in_(statement_ids))
 
-        where = or_(self.t.c.subject_id.in_(statement_ids),
+        obj_alias = self.t.alias()
+        obj_from = self.t.join(obj_alias,
+            obj_alias.c.object_statement_id==self.t.c.subject_id)
+        obj = select([self.t.c.id]).select_from(obj_from)
+        obj = obj.where(obj_alias.c.subject_id.in_(statement_ids))
+
+        where = or_(
+            self.t.c.subject_id.in_(statement_ids),
             self.t.c.id.in_(statement_ids),
-            self.t.c.id.in_(sub))
+            self.t.c.id.in_(sub),
+            self.t.c.id.in_(obj),
+        )
         s = s.where(where).distinct(self.t.c.id)
 
         statement_dict = {}
