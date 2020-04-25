@@ -66,7 +66,7 @@ class SchemaController(BaseController):
         if len(create_names):
             self.sc._fill_ids(schema_reference)
             for name in create_names:
-                self._create_statement(
+                self.sc._create_statement(
                     subject_id=None,
                     predicate_id=schema_reference.id,
                     object_string=name
