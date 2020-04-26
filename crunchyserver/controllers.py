@@ -1,5 +1,3 @@
-import traceback
-
 from datetime import datetime as dt
 from uuid import uuid4
 
@@ -11,12 +9,6 @@ from crunchylib.types import Blob, Statement, serialize, deserialize, process_db
 from crunchylib.utility import transform_doc
 
 from .models import statement_table, blob_table, file_table, volume_table
-
-
-@view_config(context=Exception, renderer='json')
-def error_view(e, request):
-    print(traceback.format_exc())
-    return {}
 
 
 class BaseController(object):

@@ -1,6 +1,9 @@
+import traceback
+
 from pyramid.config import Configurator
 from pyramid.authentication import BasicAuthAuthenticationPolicy
 from pyramid.authorization import ACLAuthorizationPolicy
+from pyramid.response import Response
 from pyramid.security import ALL_PERMISSIONS, Allow, Authenticated, forget
 from pyramid.view import forbidden_view_config, view_config
 from pyramid.httpexceptions import HTTPUnauthorized
@@ -14,6 +17,12 @@ def forbidden_view(request):
         response.headers.update(forget(request))
         return response
     return HTTPForbidden()
+
+def error_view(e, request):
+    print(traceback.format_exc())
+    response = Response('Something went wrong')
+    response.status_int = 500
+    return response
 
 def check_credentials(username, password, request):
     """Always allows everything"""
@@ -53,6 +62,8 @@ def main(settings):
     config.set_authorization_policy(ACLAuthorizationPolicy())
     config.set_root_factory(lambda request: Root())
     config.add_forbidden_view(forbidden_view)
+
+    config.add_view(view=error_view, context=Exception, renderer='json')
 
     config.add_static_view(name='static', path='../../webclient/static')
 
