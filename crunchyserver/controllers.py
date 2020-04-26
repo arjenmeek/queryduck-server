@@ -67,9 +67,11 @@ class StatementController(BaseController):
 
     ### Worker methods ###
 
-    def _create_statement(self, **kwargs):
+    def _create_statement(self, uuid_=None, **kwargs):
         """Create a Statement with specified values. None values are changed to be self referential."""
-        insert = self.t.insert().values(uuid=uuid4())
+        if uuid_ is None:
+            uuid_ = uuid4()
+        insert = self.t.insert().values(uuid=uuid_)
         (insert_id,) = self.db.execute(insert).inserted_primary_key
         values = {k: (insert_id if v is None else v) for k, v in kwargs.items()}
         where = self.t.c.id==insert_id
@@ -251,4 +253,5 @@ class StatementController(BaseController):
             elif type(statement) == Blob:
                 s = select([blob_table.c.id], limit=1).where(blob_table.c.sha256==statement.sha256)
                 result = self.db.execute(s)
-            statement.id = result.fetchone()['id']
+            row = result.fetchone()
+            statement.id = row['id'] if row else None

@@ -56,6 +56,11 @@ class SchemaController(BaseController):
         return {k: serialize(v) for k, v in schema.items()}
 
     def _establish_schema(self, schema_reference, names):
+        self.sc._fill_ids(schema_reference)
+        if not schema_reference.id:
+            self.sc._create_statement(uuid_=schema_reference.uuid,
+                subject_id=None, predicate_id=None, object_statement_id=None)
+        self.sc._fill_ids(schema_reference)
         schema = self._get_schema(schema_reference)
 
         create_names = []
