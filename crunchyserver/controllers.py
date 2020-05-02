@@ -136,18 +136,18 @@ class StatementController(BaseController):
 
         select_from = self.t
         wheres = []
-        stack = [(query, self.t)]
+        stack = [(query, self.t, self.t.c.id)]
         while stack:
-            q, t = stack.pop()
+            q, t, i = stack.pop()
             if type(q) == dict:
                 for k, v in q.items():
                     if type(k) == Statement:
                         a = self.t.alias()
                         select_from = select_from.join(a,
-                            and_(a.c.subject_id==t.c.id,
+                            and_(a.c.subject_id==i,
                                 a.c.predicate_id==k.id),
                             isouter=True)
-                        stack.append((v, a))
+                        stack.append((v, a, a.c.object_statement_id))
                     else:
                         wheres.append(column_compare(v, k, t.c))
             else:
