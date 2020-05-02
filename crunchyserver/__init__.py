@@ -67,6 +67,8 @@ def main(settings):
 
     config.add_static_view(name='static', path='../../webclient/static')
 
+    config.add_route('get_statements',
+        '/statements', request_method='GET')
     config.add_route('query_statements',
         '/statements/query', request_method='POST')
     config.add_route('get_statement',

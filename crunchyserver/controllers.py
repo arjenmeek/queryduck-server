@@ -46,6 +46,19 @@ class StatementController(BaseController):
         }
         return result
 
+    @view_config(route_name='get_statements', renderer='json')
+    def get_statements(self):
+        quads = self._get_all_statements()
+
+        result = {
+            'statements': [],
+        }
+
+        for q in quads:
+            result['statements'].append([serialize(e) for e in q])
+
+        return result
+
     @view_config(route_name='query_statements', renderer='json')
     def query_statements(self):
         query = self.request.json_body
@@ -74,13 +87,25 @@ class StatementController(BaseController):
     def _create_statements(self, rows):
         insert_ids = []
         for row in rows:
-            insert = self.t.insert().values(uuid=uuid4())
-            (insert_id,) = self.db.execute(insert).inserted_primary_key
+            insert_id = None
+            if len(row) == 4:
+                uuid_ = deserialize(row[0]).uuid
+                s = select([self.t.c.id], limit=1).where(
+                    self.t.c.uuid==uuid_)
+                row = self.db.execute(s).fetchone()
+                if row:
+                    insert_id = row['id']
+            else:
+                uuid_ = uuid4()
+
+            if insert_id is None:
+                insert = self.t.insert().values(uuid=uuid_)
+                (insert_id,) = self.db.execute(insert).inserted_primary_key
             insert_ids.append(insert_id)
 
         for idx, row in enumerate(rows):
             statement_values = []
-            for e in row:
+            for e in row[-3:]:
                 if type(e) == int:
                     statement_values.append(insert_ids[e])
                     column_name = 'object_statement_id'
@@ -99,6 +124,13 @@ class StatementController(BaseController):
             update = self.t.update().where(where).values(values)
             self.db.execute(update)
         return insert_ids
+
+    def _get_all_statements(self):
+        s, entities = self._select_full_statements(self.t, blob_files=False)
+        s = s.order_by(self.t.c.uuid)
+        results = self.db.execute(s)
+        quads = self._process_result_statements(results, entities)
+        return quads
 
     def _get_statement_values(self, statements):
         statement_ids = [s.id for s in statements]
@@ -163,7 +195,7 @@ class StatementController(BaseController):
     ### Helper methods ###
 
     @staticmethod
-    def _select_full_statements(main):
+    def _select_full_statements(main, blob_files=True):
         """Construct a select() to fetch all necessary Statement fields."""
         su = statement_table.alias()
         pr = statement_table.alias()
@@ -187,20 +219,27 @@ class StatementController(BaseController):
             .join(ob, ob.c.id==main.c.object_statement_id, isouter=True)\
             .join(blob_table,
                 blob_table.c.id==main.c.object_blob_id, isouter=True)\
-            .join(file_table,
-                file_table.c.blob_id==main.c.object_blob_id, isouter=True)\
-            .join(volume_table,
-                volume_table.c.id==file_table.c.volume_id, isouter=True)
 
-        s = select([
+        columns = [
             main,
             su.c.uuid,
             pr.c.uuid,
             ob.c.uuid,
             blob_table.c.sha256,
-            file_table.c.path,
-            volume_table.c.reference,
-        ]).select_from(select_from)
+        ]
+
+        if blob_files:
+            select_from = select_from.join(file_table,
+                    file_table.c.blob_id==main.c.object_blob_id, isouter=True)\
+                .join(volume_table,
+                    volume_table.c.id==file_table.c.volume_id, isouter=True)
+
+            columns += [
+                file_table.c.path,
+                volume_table.c.reference,
+            ]
+
+        s = select(columns).select_from(select_from)
         return s, entities
 
     @staticmethod
