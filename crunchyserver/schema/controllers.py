@@ -32,8 +32,9 @@ class SchemaController(BaseController):
 
     @view_config(route_name='get_schema', renderer='json')
     def get_schema(self):
-        schema = self._get_schema(deserialize(self.request.matchdict['reference']))
-        return {k: v.serialize() for k, v in schema.items()}
+        schema_reference = deserialize(self.request.matchdict['reference'])
+        schema = self._establish_schema(schema_reference, [])
+        return {k: serialize(v) for k, v in schema.items()}
 
     def _get_schema(self, schema_reference):
         self.sc._fill_ids(schema_reference)
