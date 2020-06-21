@@ -65,7 +65,7 @@ def main(settings):
 
     config.add_view(view=error_view, context=Exception, renderer='json')
 
-    config.add_static_view(name='static', path='../../webclient/static')
+    config.add_static_view(name='static', path='../../webclient')
 
     config.add_route('get_statements',
         '/statements', request_method='GET')
