@@ -33,7 +33,16 @@ class StatementController(BaseController):
 
     @view_config(route_name='create_statements', renderer='json')
     def create_statements(self):
-        insert_ids = self._create_statements(self.request.json_body)
+        insert_ids, quads = self._create_statements(self.request.json_body)
+
+        result = {
+            'statements': [],
+        }
+
+        for q in quads:
+            result['statements'].append([serialize(e) for e in q])
+
+        return result
 
     @view_config(route_name='get_statement', renderer='json')
     def get_statement(self):
@@ -86,6 +95,7 @@ class StatementController(BaseController):
 
     def _create_statements(self, rows):
         insert_ids = []
+        uuids = []
         for row in rows:
             insert_id = None
             if len(row) == 4:
@@ -102,18 +112,24 @@ class StatementController(BaseController):
                 insert = self.t.insert().values(uuid=uuid_)
                 (insert_id,) = self.db.execute(insert).inserted_primary_key
             insert_ids.append(insert_id)
+            uuids.append(uuid_)
 
+        quads = []
         for idx, row in enumerate(rows):
             statement_values = []
+            quad = [Statement(uuid_=uuids[idx])]
             for e in row[-3:]:
                 if type(e) == int:
                     statement_values.append(insert_ids[e])
+                    quad.append(Statement(uuid_=uuids[e])),
                     column_name = 'object_statement_id'
                 else:
                     v = deserialize(e)
                     self._fill_ids(v)
                     value, column_name = prepare_for_db(v)
                     statement_values.append(value)
+                    quad.append(value)
+
 
             values = {
                 'subject_id': statement_values[0],
@@ -123,7 +139,8 @@ class StatementController(BaseController):
             where = self.t.c.id==insert_ids[idx]
             update = self.t.update().where(where).values(values)
             self.db.execute(update)
-        return insert_ids
+            quads.append(quad)
+        return insert_ids, quads
 
     def _get_all_statements(self):
         s, entities = self._select_full_statements(self.t, blob_files=False)
