@@ -3,7 +3,8 @@ import datetime
 import os
 
 from pyramid.view import view_config
-from sqlalchemy.sql import select
+from sqlalchemy.sql import select, and_, not_
+from sqlalchemy.sql.expression import exists
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from ..controllers import BaseController
@@ -53,6 +54,11 @@ class StorageController(BaseController):
         j = file_table.join(blob_table, file_table.c.blob_id==blob_table.c.id)
         s = select([file_table, blob_table.c.sha256]).select_from(j).\
             where(file_table.c.volume_id==volume['id'])
+
+        if 'without_statements' in self.request.GET:
+            filter_query = select([statement_table.c.id]).select_from(statement_table).where(
+                statement_table.c.object_blob_id==blob_table.c.id)
+            s = s.where(not_(exists(filter_query)))
 
         if 'path' in self.request.GET:
             paths = [base64.b64decode(p) for p in self.request.GET.getall('path')]
