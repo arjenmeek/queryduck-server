@@ -1,9 +1,10 @@
 from datetime import datetime as dt
-from uuid import uuid4
+from uuid import uuid4, UUID
 
 from pyramid.view import view_config
 from sqlalchemy import and_, or_
 from sqlalchemy.sql import select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from crunchylib.types import Blob, Statement, serialize, deserialize, process_db_row, column_compare, prepare_for_db
 from crunchylib.utility import transform_doc
@@ -28,19 +29,60 @@ class StatementController(BaseController):
         self.request = request
         self.db = self.request.db
         self.t = statement_table
+        self.statement_map = {}
+        self.blob_map = {}
+
+    def unique_add(self, new_value):
+        if type(new_value) == Statement:
+            if new_value.uuid in self.statement_map:
+                value = self.statement_map[new_value.uuid]
+                if new_value.triple is not None and value.triple is None:
+                    value.triple = new_value.triple
+                if new_value.id is not None and value.id is None:
+                    value.id = new_value.id
+            else:
+                value = new_value
+                self.statement_map[value.uuid] = value
+        elif type(new_value) == Blob:
+            if new_value.sha256 in self.blob_map:
+                value = self.blob_map[new_value.sha256]
+                if new_value.id is not None and value.id is None:
+                    value.id = new_value.id
+            else:
+                value = new_value
+                self.blob_map[blob.sha256] = blob
+
+        return value
+
+    def unique_deserialize(self, ref):
+        """Ensures there is only ever one instance of the same Statement present"""
+        s = deserialize(ref)
+        if type(s) == Statement:
+            self.unique_add(s)
+            return self.statement_map[s.uuid]
+        elif type(s) == Blob:
+            if s.sha256 not in self.blob_map:
+                self.blob_map[s.sha256] = s
+            elif s.volume and not self.blob_map[s.sha256].volume:
+                self.blob_map[s.sha256].volume = s.volume
+                self.blob_map[s.sha256].path = s.path
+            return self.blob_map[s.sha256]
+        else:
+            return s
+
 
     ### View methods ###
 
     @view_config(route_name='create_statements', renderer='json')
     def create_statements(self):
-        insert_ids, quads = self._create_statements(self.request.json_body)
+        rows = self._create_statements(self.request.json_body)
 
         result = {
             'statements': [],
         }
 
-        for q in quads:
-            result['statements'].append([serialize(e) for e in q])
+        for row in rows:
+            result['statements'].append([serialize(e) for e in row])
 
         return result
 
@@ -93,61 +135,96 @@ class StatementController(BaseController):
         self.db.execute(update)
         return insert_id
 
-    def _create_statements(self, rows):
-        insert_ids = []
-        uuids = []
-        for row in rows:
-            insert_id = None
-            if len(row) == 4:
-                uuid_ = deserialize(row[0]).uuid
-                s = select([self.t.c.id], limit=1).where(
-                    self.t.c.uuid==uuid_)
-                row = self.db.execute(s).fetchone()
-                if row:
-                    insert_id = row['id']
+    def _create_statements(self, serialized_rows):
+
+        # create initial Statements without values, but with final UUID's
+        statements = []
+        for sr in serialized_rows:
+            if sr[0] is None:
+                statement = Statement(uuid_=uuid4())
+                self.unique_add(statement)
             else:
-                uuid_ = uuid4()
+                statement = self.unique_deserialize(sr[0])
+            statements.append(statement)
 
-            if insert_id is None:
-                insert = self.t.insert().values(uuid=uuid_)
-                (insert_id,) = self.db.execute(insert).inserted_primary_key
-            insert_ids.append(insert_id)
-            uuids.append(uuid_)
+        # create all Statements without values, ignoring duplicates
+        # (duplicates are OK if they are identical, we'll check this later)
+        values = [{'uuid': s.uuid} for s in statements]
+        stmt = pg_insert(self.t).values(values)
+        stmt = stmt.on_conflict_do_nothing(index_elements=['uuid'])
+        self.db.execute(stmt)
 
-        quads = []
-        for idx, row in enumerate(rows):
-            statement_values = []
-            quad = [Statement(uuid_=uuids[idx])]
-            for e in row[-3:]:
-                if type(e) == int:
-                    statement_values.append(insert_ids[e])
-                    quad.append(Statement(uuid_=uuids[e])),
-                    column_name = 'object_statement_id'
-                else:
-                    v = deserialize(e)
-                    self._fill_ids(v)
-                    value, column_name = prepare_for_db(v)
-                    statement_values.append(value)
-                    quad.append(value)
+        # fill Statement values and create set of all UUID's involved
+        all_uuids = set()
+        all_blob_sums = set()
+        rows = []
+        for idx, sr in enumerate(serialized_rows):
+            statement = statements[idx]
+            row = [statement]
+            all_uuids.add(statement.uuid)
+            for ser_v in sr[1:]:
+                v = self.unique_deserialize(ser_v) if type(ser_v) == str else statements[ser_v]
+                row.append(v)
+                if type(v) == Statement:
+                    all_uuids.add(v.uuid)
+                elif type(v) == Blob:
+                    all_blob_sums.add(v.sha256)
+            rows.append(row)
 
+        all_statements = self._get_statements_by_uuids(all_uuids)
+        all_statements_by_uuid = {s.uuid: s for s in all_statements}
 
-            values = {
-                'subject_id': statement_values[0],
-                'predicate_id': statement_values[1],
-                column_name: statement_values[2],
+        all_blobs = self._get_blobs_by_sums(all_blob_sums)
+        for b in all_blobs:
+            self.unique_add(b)
+
+        # convert the supplied rows into values to be upserted
+        insert_values = []
+        all_column_names = set()
+        for statement, s, p, o in rows:
+            self.unique_add(all_statements_by_uuid[statement.uuid])
+            if statement.triple is not None:
+                print("Exists!", statement)
+                continue
+            value, column_name = prepare_for_db(o)
+            insert_value = {
+                'uuid': statement.uuid,
+                'subject_id': s.id,
+                'predicate_id': p.id,
+                column_name: value,
             }
-            where = self.t.c.id==insert_ids[idx]
-            update = self.t.update().where(where).values(values)
-            self.db.execute(update)
-            quads.append(quad)
-        return insert_ids, quads
+            insert_values.append(insert_value)
+            all_column_names |= insert_value.keys()
+
+        # ensure every row has a value for every column, even if it's None
+        for insert_value in insert_values:
+            for column_name in all_column_names:
+                if column_name not in insert_value:
+                    insert_value[column_name] = None
+
+        # actually upsert the rows
+        if insert_values:
+            ins = pg_insert(self.t).values(insert_values)
+            on_conflict_set = {cn: getattr(ins.excluded, cn)
+                for cn in all_column_names if cn != 'uuid'}
+            upd = ins.on_conflict_do_update(index_elements=['uuid'], set_=on_conflict_set)
+            self.db.execute(upd)
+
+        return rows
 
     def _get_all_statements(self):
         s, entities = self._select_full_statements(self.t, blob_files=False)
         s = s.order_by(self.t.c.uuid)
         results = self.db.execute(s)
-        quads = self._process_result_statements(results, entities)
+        quads = self._process_result_quads(results, entities)
         return quads
+
+    def _get_statements_by_uuids(self, uuids):
+        s, entities = self._select_full_statements(self.t, blob_files=False)
+        s = s.where(self.t.c.uuid.in_(uuids))
+        results = self.db.execute(s)
+        statements = self._process_result_statements(results, entities)
+        return statements
 
     def _get_statement_values(self, statements):
         statement_ids = [s.id for s in statements]
@@ -175,7 +252,7 @@ class StatementController(BaseController):
 
         statement_dict = {}
         results = self.db.execute(s)
-        for r in self._process_result_statements(results, entities):
+        for r in self._process_result_quads(results, entities):
             ser = [serialize(e) for e in r]
             statement_dict[ser[0]] = ser[1:]
         return statement_dict
@@ -203,11 +280,18 @@ class StatementController(BaseController):
                 wheres.append(column_compare(q, 'eq', t.c))
 
         s = select([self.t.c.id, self.t.c.uuid]).select_from(select_from)
-        s = s.where(and_(*wheres)).distinct(self.t.c.id)
+        s = s.where(and_(*wheres)).distinct(self.t.c.id).limit(100)
         results = self.db.execute(s)
         statements = [Statement(uuid_=r_uuid, id_=r_id)
             for r_id, r_uuid in results]
         return statements
+
+    def _get_blobs_by_sums(self, sums):
+        s, entities = self._select_full_statements(self.t, blob_files=False)
+        s = select([blob_table]).where(blob_table.c.sha256.in_(sums))
+        results = self.db.execute(s)
+        blobs = [Blob(sha256=r['sha256'], id_=r['id']) for r in results]
+        return blobs
 
     ### Helper methods ###
 
@@ -260,7 +344,7 @@ class StatementController(BaseController):
         return s, entities
 
     @staticmethod
-    def _process_result_statements(results, entities):
+    def _process_result_quads(results, entities):
         processed = []
         for row in results:
             elements = (
@@ -270,6 +354,22 @@ class StatementController(BaseController):
                 process_db_row(row, entities['main'].c, entities)[0],
             )
             processed.append(elements)
+        return processed
+
+    def _process_result_statements(self, results, entities):
+        processed = []
+        for row in results:
+            statement = Statement(
+                uuid_=row[entities['main'].c.uuid],
+                id_=row[entities['main'].c.id])
+            if row[entities['su'].c.uuid]:
+                statement.triple = (
+                    Statement(uuid_=row[entities['su'].c.uuid]),
+                    Statement(uuid_=row[entities['pr'].c.uuid]),
+                    process_db_row(row, entities['main'].c, entities)[0],
+                )
+            statement = self.unique_add(statement)
+            processed.append(statement)
         return processed
 
     def _prepare_query(self, query):
@@ -303,3 +403,28 @@ class StatementController(BaseController):
                 result = self.db.execute(s)
             row = result.fetchone()
             statement.id = row['id'] if row else None
+
+    def _get_statement_id_map(self, statements):
+        uuids = [s.uuid for s in statements]
+        sel = select([self.t.c.id, self.t.c.uuid]).where(self.t.c.uuid.in_(uuids))
+        result = self.db.execute(sel)
+        id_map = {u: i for i, u in result.fetchall()}
+        return id_map
+
+    def _bulk_fill_ids(self, values, allow_create=False):
+        statements = [v for v in values if type(v) == Statement]
+        id_map = self._get_statement_id_map(statements)
+
+        missing = []
+        for s in statements:
+            if s.uuid in id_map:
+                s.id = id_map[s.uuid]
+            else:
+                missing.append(s)
+
+        if missing and allow_create:
+            ins = self.t.insert().values([{'uuid': s.uuid} for s in missing])
+            self.db.execute(ins)
+            id_map = self._get_statement_id_map(missing)
+            for s in missing:
+                s.id = id_map[s.uuid]
