@@ -147,13 +147,6 @@ class StatementController(BaseController):
                 statement = self.unique_deserialize(sr[0])
             statements.append(statement)
 
-        # create all Statements without values, ignoring duplicates
-        # (duplicates are OK if they are identical, we'll check this later)
-        values = [{'uuid': s.uuid} for s in statements]
-        stmt = pg_insert(self.t).values(values)
-        stmt = stmt.on_conflict_do_nothing(index_elements=['uuid'])
-        self.db.execute(stmt)
-
         # fill Statement values and create set of all UUID's involved
         all_uuids = set()
         all_blob_sums = set()
@@ -171,12 +164,20 @@ class StatementController(BaseController):
                     all_blob_sums.add(v.sha256)
             rows.append(row)
 
-        all_statements = self._get_statements_by_uuids(all_uuids)
-        all_statements_by_uuid = {s.uuid: s for s in all_statements}
-
         all_blobs = self._get_blobs_by_sums(all_blob_sums)
         for b in all_blobs:
             self.unique_add(b)
+
+        # create all Statements without values, ignoring duplicates
+        # (duplicates are OK if they are identical, we'll check this later)
+        values = [{'uuid': u} for u in all_uuids]
+        stmt = pg_insert(self.t).values(values)
+        stmt = stmt.on_conflict_do_nothing(index_elements=['uuid'])
+        self.db.execute(stmt)
+
+        # retrieve all statements as they are now
+        all_statements = self._get_statements_by_uuids(all_uuids)
+        all_statements_by_uuid = {s.uuid: s for s in all_statements}
 
         # convert the supplied rows into values to be upserted
         insert_values = []
