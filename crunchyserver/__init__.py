@@ -71,16 +71,12 @@ def main(settings):
         '/statements', request_method='GET')
     config.add_route('query_statements',
         '/statements/query', request_method='POST')
+    config.add_route('submit_transaction',
+        '/statements/transaction', request_method='POST')
     config.add_route('get_statement',
         '/statements/{reference}', request_method='GET')
     config.add_route('create_statements',
         '/statements', request_method='POST')
-    config.add_route('get_schema',
-        '/schemas/{reference}', request_method='GET')
-    config.add_route('establish_schema',
-        '/schemas/{reference}', request_method='POST')
-    config.add_route('schema_transaction',
-        '/schemas/{reference}/statements', request_method='POST')
 
     config.add_route('create_volume',
         '/volumes/{reference}', request_method='PUT')
@@ -106,7 +102,7 @@ def main(settings):
         '/volumes/{volume_reference}/files/{file_path}', request_method='GET')
 
     config.scan('.controllers')
-    config.scan('.schema.controllers')
+    config.scan('.transaction.controllers')
     config.scan('.storage.controllers')
 
     app = config.make_wsgi_app()
