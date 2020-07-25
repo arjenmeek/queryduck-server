@@ -61,11 +61,11 @@ class StorageController(BaseController):
             s = s.where(not_(exists(filter_query)))
 
         if 'path' in self.request.GET:
-            paths = [base64.b64decode(p) for p in self.request.GET.getall('path')]
+            paths = [base64.urlsafe_b64decode(p) for p in self.request.GET.getall('path')]
             s = s.where(file_table.c.path.in_(paths))
 
         if 'after' in self.request.GET:
-            after = base64.b64decode(self.request.GET['after'])
+            after = base64.urlsafe_b64decode(self.request.GET['after'])
             s = s.where(file_table.c.path > after)
 
         limit = 1000
@@ -78,7 +78,7 @@ class StorageController(BaseController):
             'size': r[file_table.c.size],
             'mtime': r[file_table.c.mtime].isoformat(),
             'lastverify': r[file_table.c.lastverify].isoformat(),
-            'sha256': base64.b64encode(r[blob_table.c.sha256]).decode('utf-8')
+            'sha256': base64.urlsafe_b64encode(r[blob_table.c.sha256]).decode('utf-8')
         } for r in self.db.execute(s)]
 
         return {
@@ -113,7 +113,7 @@ class StorageController(BaseController):
         files = [{
             'volume_id': volume.id,
             'path': os.fsencode(path),
-            'sha256': base64.b64decode(rf['sha256']),
+            'sha256': base64.urlsafe_b64decode(rf['sha256']),
             'mtime': datetime.datetime.fromisoformat(rf['mtime']),
             'lastverify': datetime.datetime.fromisoformat(rf['lastverify']),
             'size': rf['size'],
