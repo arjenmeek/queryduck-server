@@ -40,6 +40,8 @@ class StatementController(BaseController):
                     value.triple = new_value.triple
                 if new_value.id is not None and value.id is None:
                     value.id = new_value.id
+                if new_value.saved and not value.saved:
+                    value.saved = True
             else:
                 value = new_value
                 self.statement_map[value.uuid] = value
@@ -75,14 +77,16 @@ class StatementController(BaseController):
 
     @view_config(route_name='create_statements', renderer='json')
     def create_statements(self):
-        rows = self._create_statements(self.request.json_body)
+        statements = self.deserialize_rows(self.request.json_body)
+        statements = self._create_statements(statements)
 
         result = {
             'statements': [],
         }
 
-        for row in rows:
-            result['statements'].append([serialize(e) for e in row])
+        for statement in statements:
+            result['statements'].append([serialize(v)
+                for v in (statement,) + statement.triple])
 
         return result
 
@@ -135,35 +139,31 @@ class StatementController(BaseController):
         self.db.execute(update)
         return insert_id
 
-    def _create_statements(self, serialized_rows):
-
+    def deserialize_rows(self, serialized_rows):
         # create initial Statements without values, but with final UUID's
         statements = []
-        for sr in serialized_rows:
-            if sr[0] is None:
+        for row in serialized_rows:
+            if row[0] is None:
                 statement = Statement(uuid_=uuid4())
                 self.unique_add(statement)
             else:
-                statement = self.unique_deserialize(sr[0])
+                statement = self.unique_deserialize(row[0])
             statements.append(statement)
 
         # fill Statement values and create set of all UUID's involved
-        all_uuids = set()
-        all_blob_sums = set()
-        rows = []
-        for idx, sr in enumerate(serialized_rows):
-            statement = statements[idx]
-            row = [statement]
-            all_uuids.add(statement.uuid)
-            for ser_v in sr[1:]:
-                v = self.unique_deserialize(ser_v) if type(ser_v) == str else statements[ser_v]
-                row.append(v)
-                if type(v) == Statement:
-                    all_uuids.add(v.uuid)
-                elif type(v) == Blob:
-                    all_blob_sums.add(v.sha256)
-            rows.append(row)
+        for idx, row in enumerate(serialized_rows):
+            statements[idx].triple = tuple([self.unique_deserialize(ser)
+                if type(ser) == str else statements[ser] for ser in row[1:]])
 
+        return statements
+
+    def _create_statements(self, statements):
+        all_values = set([v for statement in statements
+            for v in (statement,) + statement.triple])
+
+        all_uuids = set([v.uuid for v in all_values if type(v) == Statement])
+
+        all_blob_sums = set([v.sha256 for v in all_values if type(v) == Blob])
         all_blobs = self._get_blobs_by_sums(all_blob_sums)
         for b in all_blobs:
             self.unique_add(b)
@@ -182,16 +182,16 @@ class StatementController(BaseController):
         # convert the supplied rows into values to be upserted
         insert_values = []
         all_column_names = set()
-        for statement, s, p, o in rows:
+        for statement in statements:
             self.unique_add(all_statements_by_uuid[statement.uuid])
-            if statement.triple is not None:
+            if statement.saved:
                 print("Exists!", statement)
                 continue
-            value, column_name = prepare_for_db(o)
+            value, column_name = prepare_for_db(statement.triple[2])
             insert_value = {
                 'uuid': statement.uuid,
-                'subject_id': s.id,
-                'predicate_id': p.id,
+                'subject_id': statement.triple[0].id,
+                'predicate_id': statement.triple[1].id,
                 column_name: value,
             }
             insert_values.append(insert_value)
@@ -211,7 +211,7 @@ class StatementController(BaseController):
             upd = ins.on_conflict_do_update(index_elements=['uuid'], set_=on_conflict_set)
             self.db.execute(upd)
 
-        return rows
+        return statements
 
     def _get_all_statements(self):
         s, entities = self._select_full_statements(self.t, blob_files=False)
@@ -369,6 +369,7 @@ class StatementController(BaseController):
                     Statement(uuid_=row[entities['pr'].c.uuid]),
                     process_db_row(row, entities['main'].c, entities)[0],
                 )
+                statement.saved = True
             statement = self.unique_add(statement)
             processed.append(statement)
         return processed
