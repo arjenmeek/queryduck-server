@@ -10,6 +10,7 @@ from crunchylib.types import Blob, Statement, serialize, deserialize, process_db
 from crunchylib.utility import transform_doc
 
 from .models import statement_table, blob_table, file_table, volume_table
+from .query import PGQuery, Inverted
 
 
 class BaseController(object):
@@ -116,12 +117,25 @@ class StatementController(BaseController):
 
     @view_config(route_name='query_statements', renderer='json')
     def query_statements(self):
-        query = self.request.json_body
-        statements = self._query_statements(query['query'])
+        print("QUERY BODY:", self.request.body)
+        if ('target' in self.request.json_body
+                and self.request.json_body['target'] == 'blob'):
+            target = blob_table
+        else:
+            target = statement_table
+
+        query = self._prepare_query(self.request.json_body['query'])
+        pgquery = PGQuery(query, target)
+        reference_statements = pgquery.get_results(self.db)
+
+        if target == blob_table:
+            statements = self._get_blob_values(reference_statements, target)
+        else:
+            statements = self._get_statement_values(reference_statements, target)
 
         result = {
-            'references': [serialize(s) for s in statements],
-            'statements': self._get_statement_values(statements),
+            'references': [serialize(s) for s in reference_statements],
+            'statements': statements,
         }
         return result
 
@@ -227,27 +241,59 @@ class StatementController(BaseController):
         statements = self._process_result_statements(results, entities)
         return statements
 
-    def _get_statement_values(self, statements):
-        statement_ids = [s.id for s in statements]
+    def _get_blob_values(self, blobs, target):
+        blob_ids = [b.id for b in blobs]
 
         s, entities = self._select_full_statements(self.t)
 
-        sub_alias = self.t.alias()
-        sub_from = self.t.join(sub_alias, sub_alias.c.id==self.t.c.subject_id)
-        sub = select([self.t.c.id]).select_from(sub_from)
+        main_alias = self.t.alias('main')
+        main_from = target.join(main_alias, main_alias.c.object_blob_id==target.c.id)
+        main = select([main_alias.c.id]).select_from(main_from)
+        main = main.where(main_alias.c.object_blob_id.in_(blob_ids))
+
+        sub_alias = self.t.alias('sub')
+        sub_from = main_alias.join(sub_alias,
+            sub_alias.c.subject_id==main_alias.c.subject_id)
+        sub = select([sub_alias.c.id]).select_from(sub_from)
+        sub = sub.where(main_alias.c.object_blob_id.in_(blob_ids))
+
+        where = or_(
+            statement_table.c.id.in_(sub),
+        )
+        s = s.where(and_(where, statement_table.c.subject_id!=None)).distinct(self.t.c.id)
+
+        statement_dict = {}
+        results = self.db.execute(s)
+        for r in self._process_result_quads(results, entities):
+            if r[1] is None:
+                continue
+            ser = [serialize(e) for e in r]
+            statement_dict[ser[0]] = ser[1:]
+        return statement_dict
+
+    def _get_statement_values(self, statements, target=None):
+        if target is None:
+            target = self.t
+        statement_ids = [s.id for s in statements]
+
+        s, entities = self._select_full_statements(target)
+
+        sub_alias = statement_table.alias()
+        sub_from = target.join(sub_alias, sub_alias.c.id==target.c.subject_id)
+        sub = select([target.c.id]).select_from(sub_from)
         sub = sub.where(sub_alias.c.subject_id.in_(statement_ids))
 
-        obj_alias = self.t.alias()
-        obj_from = self.t.join(obj_alias,
-            obj_alias.c.object_statement_id==self.t.c.subject_id)
-        obj = select([self.t.c.id]).select_from(obj_from)
+        obj_alias = statement_table.alias()
+        obj_from = target.join(obj_alias,
+            obj_alias.c.object_statement_id==target.c.subject_id)
+        obj = select([target.c.id]).select_from(obj_from)
         obj = obj.where(obj_alias.c.subject_id.in_(statement_ids))
 
         where = or_(
-            self.t.c.subject_id.in_(statement_ids),
-            self.t.c.id.in_(statement_ids),
-            self.t.c.id.in_(sub),
-            self.t.c.id.in_(obj),
+            target.c.subject_id.in_(statement_ids),
+            target.c.id.in_(statement_ids),
+            target.c.id.in_(sub),
+            target.c.id.in_(obj),
         )
         s = s.where(where).distinct(self.t.c.id)
 
@@ -257,35 +303,6 @@ class StatementController(BaseController):
             ser = [serialize(e) for e in r]
             statement_dict[ser[0]] = ser[1:]
         return statement_dict
-
-    def _query_statements(self, query):
-        query = self._prepare_query(query)
-
-        select_from = self.t
-        wheres = []
-        stack = [(query, self.t, self.t.c.id)]
-        while stack:
-            q, t, i = stack.pop()
-            if type(q) == dict:
-                for k, v in q.items():
-                    if type(k) == Statement:
-                        a = self.t.alias()
-                        select_from = select_from.join(a,
-                            and_(a.c.subject_id==i,
-                                a.c.predicate_id==k.id),
-                            isouter=True)
-                        stack.append((v, a, a.c.object_statement_id))
-                    else:
-                        wheres.append(column_compare(v, k, t.c))
-            else:
-                wheres.append(column_compare(q, 'eq', t.c))
-
-        s = select([self.t.c.id, self.t.c.uuid]).select_from(select_from)
-        s = s.where(and_(*wheres)).distinct(self.t.c.id).limit(100)
-        results = self.db.execute(s)
-        statements = [Statement(uuid_=r_uuid, id_=r_id)
-            for r_id, r_uuid in results]
-        return statements
 
     def _get_blobs_by_sums(self, sums):
         s, entities = self._select_full_statements(self.t, blob_files=False)
@@ -378,7 +395,11 @@ class StatementController(BaseController):
         """Deserialize any values inside the query, and add database IDs."""
         values = []
         def deserialize_reference(ref):
-            if ':' in ref:
+            if ref.startswith('~') and ':' in ref:
+                s = deserialize(ref[1:])
+                v = Inverted(s)
+                values.append(s)
+            elif ':' in ref:
                 v = deserialize(ref)
                 values.append(v)
             else:
