@@ -1,8 +1,10 @@
+import base64
+
 from uuid import uuid4
 
 from pyramid.view import view_config
 
-from crunchylib.types import Statement, serialize, deserialize
+from crunchylib.types import Statement, Blob, serialize, deserialize
 from crunchylib.utility import transform_doc
 
 from .repository import PGRepository
@@ -76,18 +78,42 @@ class StatementController(BaseController):
         else:
             target = self.repo.get_target_table('statement')
 
+        if 'after' in body and body['after'] is not None:
+            after = self.unique_deserialize(body['after'])
+        else:
+            after = None
+
         query = self._prepare_query(body['query'])
-        pgquery = PGQuery(self.repo, query, target)
+        pgquery = PGQuery(self.repo, query, target, after=after)
         reference_statements = pgquery.get_results()
         statements = pgquery.get_result_values()
+        files = self.repo.get_blob_files([s.triple[2] for s in statements
+            if type(s.triple[2]) == Blob])
 
         result = {
             'references': [serialize(s) for s in reference_statements],
-            'statements': statements,
+            'statements': self.statements_to_dict(statements),
+            'files': self.serialize_files(files),
         }
         return result
 
     ### Worker methods ###
+
+    def serialize_files(self, files):
+        serialized_files = {}
+        for blob, v in files.items():
+            k = serialize(blob)
+            serialized_files[k] = [serialize(f) for f in v]
+
+        return serialized_files
+
+    def statements_to_dict(self, statements):
+        statement_dict = {}
+        for s in statements:
+            if not s.triple or not s.triple[0]:
+                continue
+            statement_dict[serialize(s)] = [serialize(e) for e in s.triple]
+        return statement_dict
 
     def unique_deserialize(self, ref):
         """Ensures there is only ever one instance of the same Statement present"""

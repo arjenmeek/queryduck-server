@@ -1,20 +1,18 @@
 from sqlalchemy import and_, or_
 from sqlalchemy.sql import select
 
-from crunchylib.types import Blob, Statement, serialize, deserialize, process_db_row, column_compare, prepare_for_db
+from crunchylib.types import Blob, Statement, Inverted, serialize, deserialize, process_db_row, column_compare, prepare_for_db
 
 from .models import statement_table, blob_table, file_table, volume_table
 
-class Inverted:
-    def __init__(self, value):
-        self.value = value
 
 class PGQuery:
 
-    def __init__(self, repo, query, target):
+    def __init__(self, repo, query, target, after=None):
         self.repo = repo
         self.query = query
         self.target = target
+        self.after = after
         self.db = self.repo.db
         self.select_from = self.target
         self.wheres = []
@@ -58,18 +56,31 @@ class PGQuery:
                     self.wheres.append(i==(q.id if type(q) in (Statement,) else q))
 
     def get_results(self):
-        extra_column = self.target.c.uuid if self.target == statement_table \
-            else blob_table.c.sha256
-        s = select([self.target.c.id, extra_column]).select_from(self.select_from)
-        s = s.where(and_(*self.wheres)).distinct(self.target.c.id).limit(100)
+        if self.target == blob_table:
+            return self._get_blob_results()
+        elif self.target == statement_table:
+            return self._get_statement_results()
 
+    def _get_blob_results(self):
+        s = select([self.target.c.id, blob_table.c.sha256]).select_from(self.select_from)
+        s = s.where(and_(*self.wheres)).distinct(self.target.c.sha256).limit(1000)
+        if self.after is not None:
+            s = s.where(self.target.c.sha256 > self.after.sha256)
+        s = s.order_by(self.target.c.sha256)
         resultset = self.db.execute(s)
-        if self.target == statement_table:
-            self.results = [Statement(uuid_=r_uuid, id_=r_id)
-                for r_id, r_uuid in resultset]
-        elif self.target == blob_table:
-            self.results = [Blob(sha256=r_sha256, id_=r_id)
-                for r_id, r_sha256 in resultset]
+        self.results = [Blob(sha256=r_sha256, id_=r_id)
+            for r_id, r_sha256 in resultset]
+        return self.results
+
+    def _get_statement_results(self):
+        s = select([self.target.c.id, self.target.c.uuid]).select_from(self.select_from)
+        s = s.where(and_(*self.wheres)).distinct(self.target.c.uuid).limit(1000)
+        if self.after is not None:
+            s = s.where(self.target.c.uui > self.after.uuid)
+        s = s.order_by(self.target.c.uuid)
+        resultset = self.db.execute(s)
+        self.results = [Statement(uuid_=r_uuid, id_=r_id)
+            for r_id, r_uuid in resultset]
         return self.results
 
     def get_result_values(self):
@@ -85,9 +96,6 @@ class PGQuery:
         s, entities = self.repo.select_full_statements(statement_table)
 
         main_alias = statement_table.alias('main')
-        main_from = self.target.join(main_alias, main_alias.c.object_blob_id==self.target.c.id)
-        main = select([main_alias.c.id]).select_from(main_from)
-        main = main.where(main_alias.c.object_blob_id.in_(blob_ids))
 
         sub_alias = statement_table.alias('sub')
         sub_from = main_alias.join(sub_alias,
@@ -95,19 +103,17 @@ class PGQuery:
         sub = select([sub_alias.c.id]).select_from(sub_from)
         sub = sub.where(main_alias.c.object_blob_id.in_(blob_ids))
 
+        sub_res = self.db.execute(sub)
+        sub_ids = [i[0] for i in sub_res.fetchall()]
+
         where = or_(
-            statement_table.c.id.in_(sub),
+            statement_table.c.id.in_(sub_ids),
         )
         s = s.where(and_(where, statement_table.c.subject_id!=None)).distinct(statement_table.c.id)
 
-        statement_dict = {}
         results = self.db.execute(s)
-        for r in self.repo.process_result_quads(results, entities):
-            if r[1] is None:
-                continue
-            ser = [serialize(e) for e in r]
-            statement_dict[ser[0]] = ser[1:]
-        return statement_dict
+        statements = self.repo.process_result_statements(results, entities)
+        return statements
 
     def _get_statement_values(self):
         statement_ids = [s.id for s in self.results]
@@ -133,9 +139,6 @@ class PGQuery:
         )
         s = s.where(where).distinct(statement_table.c.id)
 
-        statement_dict = {}
         results = self.db.execute(s)
-        for r in self.repo.process_result_quads(results, entities):
-            ser = [serialize(e) for e in r]
-            statement_dict[ser[0]] = ser[1:]
-        return statement_dict
+        statements = self.repo.process_result_statements(results, entities)
+        return statements

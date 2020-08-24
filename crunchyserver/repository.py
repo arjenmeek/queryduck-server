@@ -1,8 +1,10 @@
+from collections import defaultdict
+
 from sqlalchemy import and_, or_
 from sqlalchemy.sql import select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
-from crunchylib.types import Blob, Statement, process_db_row, column_compare, prepare_for_db
+from crunchylib.types import Blob, Statement, File, process_db_row, column_compare, prepare_for_db
 
 from .models import statement_table, blob_table, file_table, volume_table
 
@@ -38,7 +40,7 @@ class PGRepository:
                     value.path = new_value.path
             else:
                 value = new_value
-                self.blob_map[blob.sha256] = value
+                self.blob_map[value.sha256] = value
         else:
             # simple scalar value, doesn't need to be uniqueified
             value = new_value
@@ -147,8 +149,6 @@ class PGRepository:
             'pr': pr,
             'ob': ob,
             'blob': blob_table,
-            'volume': volume_table,
-            'file': file_table,
         }
 
         # If you're reading this and have suggestions on a cleaner style that
@@ -168,19 +168,20 @@ class PGRepository:
             blob_table.c.sha256,
         ]
 
-        if blob_files:
-            select_from = select_from.join(file_table,
-                    file_table.c.blob_id==main.c.object_blob_id, isouter=True)\
-                .join(volume_table,
-                    volume_table.c.id==file_table.c.volume_id, isouter=True)
-
-            columns += [
-                file_table.c.path,
-                volume_table.c.reference,
-            ]
-
         s = select(columns).select_from(select_from)
         return s, entities
+
+    @staticmethod
+    def process_result_rows(results, entities):
+        processed = []
+        for row in results:
+            statement = self.unique_add(Statement(uuid_=row[entities['main'].c.uuid]))
+            statement.triple = (
+                self.unique_add(Statement(uuid_=row[entities['su'].c.uuid])),
+                self.unique_add(Statement(uuid_=row[entities['pr'].c.uuid])),
+                self.unique_add(process_db_row(row, entities['main'].c, entities)[0]),
+            )
+        return processed
 
     @staticmethod
     def process_result_quads(results, entities):
@@ -261,3 +262,29 @@ class PGRepository:
         elif target_name == 'statement':
             target = statement_table
         return target
+
+    def get_blob_files(self, blobs):
+        if not blobs:
+            return {}
+
+        blobs_by_id = {b.id: b for b in blobs}
+
+        select_from = file_table.join(volume_table,
+            volume_table.c.id==file_table.c.volume_id, isouter=True)
+
+        sel = select([
+            file_table.c.blob_id,
+            file_table.c.path,
+            volume_table.c.reference,
+        ]).select_from(select_from).where(file_table.c.blob_id.in_(blobs_by_id.keys()))
+        result = self.db.execute(sel)
+
+        files = defaultdict(list)
+        for row in result.fetchall():
+            key = blobs_by_id[row[file_table.c.blob_id]]
+            f = File(
+                volume=row[volume_table.c.reference],
+                path=row[file_table.c.path],
+            )
+            files[key].append(f)
+        return files
