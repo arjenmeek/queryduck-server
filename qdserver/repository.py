@@ -288,3 +288,22 @@ class PGRepository:
             )
             files[key].append(f)
         return files
+
+    def get_file_blob(self, file_):
+        select_from = file_table\
+            .join(volume_table, volume_table.c.id==file_table.c.volume_id,
+                isouter=True)\
+            .join(blob_table, blob_table.c.id==file_table.c.blob_id,
+                isouter=True)
+
+        sel = select([
+            blob_table.c.id,
+            blob_table.c.sha256,
+        ]).select_from(select_from).where(and_(
+            volume_table.c.reference==file_.volume,
+            file_table.c.path==file_.path
+        ))
+        res = self.db.execute(sel)
+        id_, sha256 = res.fetchone()
+        blob = Blob(sha256=sha256, id_=id_)
+        return blob

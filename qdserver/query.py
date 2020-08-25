@@ -1,7 +1,17 @@
 from sqlalchemy import and_, or_
 from sqlalchemy.sql import select
 
-from queryduck.types import Blob, Statement, Inverted, serialize, deserialize, process_db_row, column_compare, prepare_for_db
+from queryduck.types import (
+    Blob,
+    Statement,
+    File,
+    Inverted,
+    serialize,
+    deserialize,
+    process_db_row,
+    column_compare,
+    prepare_for_db,
+)
 
 from .models import statement_table, blob_table, file_table, volume_table
 
@@ -51,6 +61,8 @@ class PGQuery:
                         self.wheres.append(column_compare(v, k, t.c))
             else:
                 if i.name in ('object_statement_id',):
+                    if type(q) == File:
+                        q = self.repo.get_file_blob(q)
                     self.wheres.append(column_compare(q, 'eq', t.c))
                 else:
                     self.wheres.append(i==(q.id if type(q) in (Statement,) else q))
