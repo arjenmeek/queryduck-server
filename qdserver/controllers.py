@@ -33,7 +33,7 @@ class StatementController(BaseController):
     @view_config(route_name='create_statements', renderer='json')
     def create_statements(self):
         statements = self.deserialize_rows(self.request.json_body)
-        statements = self._create_statements(statements)
+        statements = self.repo.create_statements(statements)
 
         result = {
             'statements': [],
