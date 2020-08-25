@@ -1,20 +1,10 @@
 # QueryDuck server application
 
-WARNING: This document is outdated.
-
-# Design and background
-
-Please refer to the `docs` directory at the root of this source control repository, in particular `poc1.md`.
+This application is part of the QueryDuck project. Please visit the main [queryduck](https://github.com/arjenmeek/queryduck) repository for more information.
 
 
-# File structure
+## License
 
-*   `README.md`: This document.
-*   `serve.py`: The script that launches the server application.
-*   `qdserver`: Python module containing most of the actual code.
-*   `config.yml.example`: Example/template file, which you should use to base your own `config.yml` on.
+All works in this repository are © Copyright 2020 Arjen Meek.
 
-
-# Installation
-
-TODO
+See [LICENSE](LICENSE) for further license and warranty information.
