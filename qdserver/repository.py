@@ -4,7 +4,7 @@ from sqlalchemy import and_, or_
 from sqlalchemy.sql import select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
-from crunchylib.types import Blob, Statement, File, process_db_row, column_compare, prepare_for_db
+from queryduck.types import Blob, Statement, File, process_db_row, column_compare, prepare_for_db
 
 from .models import statement_table, blob_table, file_table, volume_table
 

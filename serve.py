@@ -1,15 +1,21 @@
-import yaml
+import os
 import sys
+
+import yaml
 
 from wsgiref.simple_server import make_server
 
-sys.path.append('../common')
+if 'QDCONFIG' in os.environ:
+    conffile = os.environ['QDCONFIG']
+else:
+    conffile = os.path.expanduser('~/.config/queryduck/config.yml')
 
-from crunchyserver import main
-
-
-with open('config.yml', 'r') as f:
+with open(conffile, 'r') as f:
     config = yaml.load(f.read(), Loader=yaml.SafeLoader)
+
+sys.path.append(os.path.expanduser(config['queryduck_path']))
+
+from qdserver import main
 
 app = main({
     'sqlalchemy.url': config['db']['url'],

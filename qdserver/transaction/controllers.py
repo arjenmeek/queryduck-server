@@ -6,8 +6,8 @@ from datetime import datetime as dt
 from pyramid.view import view_config
 from sqlalchemy.sql import select
 
-from crunchylib.types import Statement, serialize, deserialize
-from crunchylib.schema import Bindings
+from queryduck.types import Statement, serialize, deserialize
+from queryduck.schema import Bindings
 
 from ..controllers import BaseController, StatementController
 from ..models import statement_table

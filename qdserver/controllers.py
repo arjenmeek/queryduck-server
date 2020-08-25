@@ -4,8 +4,8 @@ from uuid import uuid4
 
 from pyramid.view import view_config
 
-from crunchylib.types import Statement, Blob, serialize, deserialize
-from crunchylib.utility import transform_doc
+from queryduck.types import Statement, Blob, serialize, deserialize
+from queryduck.utility import transform_doc
 
 from .repository import PGRepository
 from .query import PGQuery, Inverted
