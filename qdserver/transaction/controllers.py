@@ -6,6 +6,7 @@ from datetime import datetime as dt
 from pyramid.view import view_config
 from sqlalchemy.sql import select
 
+from queryduck.constants import DEFAULT_SCHEMA_FILES
 from queryduck.types import Statement, serialize, deserialize
 from queryduck.schema import Bindings
 
@@ -22,6 +23,7 @@ class TransactionController(BaseController):
         self.db = self.request.db
         self.t = statement_table
         self.sc = StatementController(self.request)
+        self.repo = self.sc.repo
         self._bindings = None
 
     def _bindings_from_schemas(self, schemas):
@@ -35,8 +37,8 @@ class TransactionController(BaseController):
     def get_bindings(self):
         if self._bindings is None:
             schemas = []
-            for filename in ('main_schema.json', 'transaction_schema.json'):
-                filepath = '../schemas/{}'.format(filename)
+            for filename in DEFAULT_SCHEMA_FILES:
+                filepath = '../queryduck/schemas/{}'.format(filename)
                 with open(filepath, 'r') as f:
                     schemas.append(json.load(f))
             self._bindings = self._bindings_from_schemas(schemas)
@@ -46,7 +48,7 @@ class TransactionController(BaseController):
     def submit_transaction(self):
         statements = self.sc.deserialize_rows(self.request.json_body)
         transaction_statements = self._wrap_transaction(statements)
-        all_statements = self.sc._create_statements(statements + transaction_statements)
+        all_statements = self.repo.create_statements(statements + transaction_statements)
         [print(s, s.triple) for s in statements]
 
         result = {
@@ -72,5 +74,5 @@ class TransactionController(BaseController):
         for statement in statements:
             transaction_statements.append(Statement(uuid.uuid4(),
                 triple=(transaction, b.transactionContains, statement)))
-        final_statements = [self.sc.unique_add(s) for s in transaction_statements]
+        final_statements = [self.repo.unique_add(s) for s in transaction_statements]
         return final_statements
