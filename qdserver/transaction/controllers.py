@@ -7,7 +7,8 @@ from pyramid.view import view_config
 from sqlalchemy.sql import select
 
 from queryduck.constants import DEFAULT_SCHEMA_FILES
-from queryduck.types import Statement, serialize, deserialize
+from queryduck.serialization import serialize, deserialize
+from queryduck.types import Statement
 from queryduck.schema import Bindings
 
 from ..controllers import BaseController, StatementController

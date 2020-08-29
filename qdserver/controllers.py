@@ -4,11 +4,12 @@ from uuid import uuid4
 
 from pyramid.view import view_config
 
-from queryduck.types import Statement, Blob, serialize, deserialize
+from queryduck.types import Statement, Blob
+from queryduck.serialization import serialize, deserialize
 from queryduck.utility import transform_doc
 
 from .repository import PGRepository
-from .query import PGQuery, Inverted
+from .query import PGQuery
 
 
 class BaseController(object):
@@ -88,7 +89,7 @@ class StatementController(BaseController):
         reference_statements = pgquery.get_results()
         statements = pgquery.get_result_values()
         files = self.repo.get_blob_files([s.triple[2] for s in statements
-            if type(s.triple[2]) == Blob])
+            if s.triple and type(s.triple[2]) == Blob])
 
         result = {
             'references': [serialize(s) for s in reference_statements],
@@ -145,15 +146,11 @@ class StatementController(BaseController):
         """Deserialize any values inside the query, and add database IDs."""
         values = []
         def deserialize_reference(ref):
-            if ref.startswith('~') and ':' in ref:
-                s = deserialize(ref[1:])
-                v = Inverted(s)
-                values.append(s)
-            elif ':' in ref:
-                v = deserialize(ref)
-                values.append(v)
+            v = deserialize(ref)
+            if hasattr(v, 'value'):
+                values.append(v.value)
             else:
-                v = ref
+                values.append(v)
             return v
         query = transform_doc(query, deserialize_reference)
         self.repo.fill_ids(values)

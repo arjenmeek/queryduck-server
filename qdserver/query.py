@@ -1,19 +1,22 @@
 from sqlalchemy import and_, or_
 from sqlalchemy.sql import select
 
+from queryduck.query import (
+    MatchObject,
+    MatchSubject,
+    MetaObject,
+    MetaSubject,
+)
+
+from queryduck.serialization import serialize, deserialize
 from queryduck.types import (
     Blob,
     Statement,
     File,
-    Inverted,
-    serialize,
-    deserialize,
-    process_db_row,
-    column_compare,
-    prepare_for_db,
 )
 
 from .models import statement_table, blob_table, file_table, volume_table
+from .utility import process_db_row, column_compare, prepare_for_db
 
 
 class PGQuery:
@@ -27,45 +30,40 @@ class PGQuery:
         self.select_from = self.target
         self.wheres = []
         self.results = None
-        self.process_query()
+        self.stack = []
+        self.apply_query(query)
 
-    def process_query(self):
-        stack = [(self.query, self.target, self.target.c.id)]
-        while stack:
-            q, t, i = stack.pop()
+    def _apply_join(self, key, rhs_column, v):
+        lhs_name, id_name = key.get_join_columns(v)
+        a = statement_table.alias()
+        self.select_from = self.select_from.join(a,
+            and_(a.c[lhs_name]==rhs_column,
+                a.c.predicate_id==key.value.id),
+            isouter=True)
+        self.stack.append((v, a, id_name))
+
+    def apply_query(self, query):
+        self.stack.append((query, self.target, 'id'))
+        while self.stack:
+            q, t, c = self.stack.pop()
             # q = subquery
             # t = entity against which this is applied
-            # i = id column to match further subqueries against
+            # c = id column name to match further subqueries against
             #     ( = the column the next entity represents)
             if type(q) == dict:
                 for k, v in q.items():
-                    if type(k) == Statement:
-                        a = statement_table.alias()
-                        self.select_from = self.select_from.join(a,
-                            and_(a.c.subject_id==i,
-                                a.c.predicate_id==k.id),
-                            isouter=True)
-                        stack.append((v, a, a.c.object_statement_id))
-                    elif type(k) == Inverted:
-                        a = statement_table.alias()
-                        if type(v) == Blob or v is None:
-                            col = a.c.object_blob_id
-                        else:
-                            col = a.c.object_statement_id
-                        self.select_from = self.select_from.join(a,
-                            and_(col==i,
-                                a.c.predicate_id==k.value.id),
-                            isouter=True)
-                        stack.append((v, a, a.c.subject_id))
+                    if type(k) in (MatchObject, MatchSubject, MetaObject, MetaSubject):
+                        rhs_column = t.c.id if type(k) == MetaObject else t.c[c]
+                        self._apply_join(k, rhs_column, v)
                     else:
                         self.wheres.append(column_compare(v, k, t.c))
             else:
-                if i.name in ('object_statement_id',):
+                if c in ('object_statement_id',):
                     if type(q) == File:
                         q = self.repo.get_file_blob(q)
                     self.wheres.append(column_compare(q, 'eq', t.c))
                 else:
-                    self.wheres.append(i==(q.id if type(q) in (Statement,) else q))
+                    self.wheres.append(t.c[c]==(q.id if type(q) in (Statement,) else q))
 
     def get_results(self):
         if self.target == blob_table:
