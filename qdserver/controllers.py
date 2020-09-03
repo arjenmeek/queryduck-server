@@ -91,6 +91,8 @@ class StatementController(BaseController):
         files = self.repo.get_blob_files([s.triple[2] for s in statements
             if s.triple and type(s.triple[2]) == Blob])
 
+        print("Query results: {} primary, {} additional, {} files".format(
+                len(reference_statements), len(statements), len(files)))
         result = {
             'references': [serialize(s) for s in reference_statements],
             'statements': self.statements_to_dict(statements),
