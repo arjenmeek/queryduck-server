@@ -36,9 +36,6 @@ class PGRepository:
                 value = self.blob_map[new_value.sha256]
                 if new_value.id is not None and value.id is None:
                     value.id = new_value.id
-                if new_value.volume and not value.volume:
-                    value.volume = new_value.volume
-                    value.path = new_value.path
             else:
                 value = new_value
                 self.blob_map[value.sha256] = value
