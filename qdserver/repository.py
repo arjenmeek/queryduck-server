@@ -227,7 +227,7 @@ class PGRepository:
                 s = select([blob_table.c.id], limit=1).where(blob_table.c.sha256==statement.sha256)
                 result = self.db.execute(s)
             row = result.fetchone()
-            statement.id = row['id'] if row else None
+            statement.id = row['id'] if row else -1
 
     def get_statement_id_map(self, statements):
         uuids = [s.uuid for s in statements]
