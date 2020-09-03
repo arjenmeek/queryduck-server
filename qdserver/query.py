@@ -86,7 +86,7 @@ class PGQuery:
         s = select([self.target.c.id, self.target.c.uuid]).select_from(self.select_from)
         s = s.where(and_(*self.wheres)).distinct(self.target.c.uuid).limit(1000)
         if self.after is not None:
-            s = s.where(self.target.c.uui > self.after.uuid)
+            s = s.where(self.target.c.uuid > self.after.uuid)
         s = s.order_by(self.target.c.uuid)
         resultset = self.db.execute(s)
         self.results = [Statement(uuid_=r_uuid, id_=r_id)
