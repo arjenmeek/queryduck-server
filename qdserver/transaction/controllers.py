@@ -53,11 +53,11 @@ class TransactionController(BaseController):
         [print(s, s.triple) for s in statements]
 
         result = {
-            'statements': [],
+            'statements': {},
         }
 
         for statement in statements:
-            result['statements'].append(serialize(statement))
+            result['statements'][serialize(statement)] = [serialize(e) for e in statement.triple]
 
         return result
 
