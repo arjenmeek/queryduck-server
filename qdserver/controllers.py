@@ -86,7 +86,7 @@ class StatementController(BaseController):
 
         query = self._prepare_query(body['query'])
         pgquery = PGQuery(self.repo, query, target, after=after)
-        reference_statements = pgquery.get_results()
+        reference_statements, more = pgquery.get_results()
         statements = pgquery.get_result_values()
         files = self.repo.get_blob_files([s.triple[2] for s in statements
             if s.triple and type(s.triple[2]) == Blob])
@@ -97,6 +97,7 @@ class StatementController(BaseController):
             'references': [serialize(s) for s in reference_statements],
             'statements': self.statements_to_dict(statements),
             'files': self.serialize_files(files),
+            'more': more,
         }
         return result
 

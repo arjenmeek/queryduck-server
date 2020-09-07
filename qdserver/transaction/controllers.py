@@ -50,7 +50,7 @@ class TransactionController(BaseController):
         statements = self.sc.deserialize_rows(self.request.json_body)
         transaction_statements = self._wrap_transaction(statements)
         all_statements = self.repo.create_statements(statements + transaction_statements)
-        [print(s, s.triple) for s in statements]
+        #[print(s, s.triple) for s in statements]
 
         result = {
             'statements': {},
