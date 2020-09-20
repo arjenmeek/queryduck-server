@@ -41,8 +41,9 @@ class StatementController(BaseController):
         }
 
         for statement in statements:
-            result["statements"].append([serialize(v)
-                for v in (statement,) + statement.triple])
+            result["statements"].append(
+                [serialize(v) for v in (statement,) + statement.triple]
+            )
 
         return result
 
@@ -88,11 +89,15 @@ class StatementController(BaseController):
         pgquery = PGQuery(self.repo, query, target, after=after)
         reference_statements, more = pgquery.get_results()
         statements = pgquery.get_result_values()
-        files = self.repo.get_blob_files([s.triple[2] for s in statements
-            if s.triple and type(s.triple[2]) == Blob])
+        files = self.repo.get_blob_files(
+            [s.triple[2] for s in statements if s.triple and type(s.triple[2]) == Blob]
+        )
 
-        print("Query results: {} primary, {} additional, {} files".format(
-                len(reference_statements), len(statements), len(files)))
+        print(
+            "Query results: {} primary, {} additional, {} files".format(
+                len(reference_statements), len(statements), len(files)
+            )
+        )
         result = {
             "references": [serialize(s) for s in reference_statements],
             "statements": self.statements_to_dict(statements),
@@ -138,8 +143,14 @@ class StatementController(BaseController):
 
         # fill Statement values and create set of all UUID"s involved
         for idx, row in enumerate(serialized_rows):
-            statements[idx].triple = tuple([self.unique_deserialize(ser)
-                if type(ser) == str else statements[ser] for ser in row[1:]])
+            statements[idx].triple = tuple(
+                [
+                    self.unique_deserialize(ser)
+                    if type(ser) == str
+                    else statements[ser]
+                    for ser in row[1:]
+                ]
+            )
 
         return statements
 
@@ -148,6 +159,7 @@ class StatementController(BaseController):
     def _prepare_query(self, query):
         """Deserialize any values inside the query, and add database IDs."""
         values = []
+
         def deserialize_reference(ref):
             v = deserialize(ref)
             if hasattr(v, "value"):
@@ -155,6 +167,7 @@ class StatementController(BaseController):
             else:
                 values.append(v)
             return v
+
         query = transform_doc(query, deserialize_reference)
         self.repo.fill_ids(values)
         return query

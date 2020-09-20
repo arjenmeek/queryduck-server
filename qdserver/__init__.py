@@ -10,6 +10,7 @@ from pyramid.httpexceptions import HTTPUnauthorized
 
 from .models import init_db
 
+
 def forbidden_view(request):
     """Trigger client to send basic HTTP auth info"""
     if request.authenticated_userid is None:
@@ -18,21 +19,24 @@ def forbidden_view(request):
         return response
     return HTTPForbidden()
 
+
 def error_view(e, request):
     print(traceback.format_exc())
     response = Response("Something went wrong")
     response.status_int = 500
     return response
 
+
 def check_credentials(username, password, request):
     """Always allows everything"""
     return []
 
+
 class Root:
     """Very basic root context"""
-    __acl__ = (
-        (Allow, Authenticated, ALL_PERMISSIONS),
-    )
+
+    __acl__ = ((Allow, Authenticated, ALL_PERMISSIONS),)
+
 
 def main(settings):
     """Create and return a WSGI application."""
@@ -50,6 +54,7 @@ def main(settings):
             else:
                 transaction.commit()
             connection.close()
+
         request.add_finished_callback(cleanup)
 
         return connection
@@ -67,39 +72,36 @@ def main(settings):
 
     config.add_static_view(name="static", path="../../webclient")
 
-    config.add_route("get_statements",
-        "/statements", request_method="GET")
-    config.add_route("query_statements",
-        "/statements/query", request_method="POST")
-    config.add_route("submit_transaction",
-        "/statements/transaction", request_method="POST")
-    config.add_route("get_statement",
-        "/statements/{reference}", request_method="GET")
-    config.add_route("create_statements",
-        "/statements", request_method="POST")
+    config.add_route("get_statements", "/statements", request_method="GET")
+    config.add_route("query_statements", "/statements/query", request_method="POST")
+    config.add_route(
+        "submit_transaction", "/statements/transaction", request_method="POST"
+    )
+    config.add_route("get_statement", "/statements/{reference}", request_method="GET")
+    config.add_route("create_statements", "/statements", request_method="POST")
 
-    config.add_route("create_volume",
-        "/volumes/{reference}", request_method="PUT")
-    config.add_route("delete_volume",
-        "/volumes/{reference}", request_method="DELETE")
-    config.add_route("get_volume",
-        "/volumes/{reference}")
-    config.add_route("list_volumes",
-        "/volumes")
+    config.add_route("create_volume", "/volumes/{reference}", request_method="PUT")
+    config.add_route("delete_volume", "/volumes/{reference}", request_method="DELETE")
+    config.add_route("get_volume", "/volumes/{reference}")
+    config.add_route("list_volumes", "/volumes")
 
-    config.add_route("create_blob",
-        "/blobs/new", request_method="POST")
-    config.add_route("get_blob",
-        "/blobs/{reference}")
-    config.add_route("list_blobs",
-        "/blobs")
+    config.add_route("create_blob", "/blobs/new", request_method="POST")
+    config.add_route("get_blob", "/blobs/{reference}")
+    config.add_route("list_blobs", "/blobs")
 
-    config.add_route("list_volume_files",
-        "/volumes/{volume_reference}/files", request_method="GET")
-    config.add_route("mutate_volume_files",
-        "/volumes/{volume_reference}/files", request_method="POST")
-    config.add_route("get_volume_file",
-        "/volumes/{volume_reference}/files/{file_path}", request_method="GET")
+    config.add_route(
+        "list_volume_files", "/volumes/{volume_reference}/files", request_method="GET"
+    )
+    config.add_route(
+        "mutate_volume_files",
+        "/volumes/{volume_reference}/files",
+        request_method="POST",
+    )
+    config.add_route(
+        "get_volume_file",
+        "/volumes/{volume_reference}/files/{file_path}",
+        request_method="GET",
+    )
 
     config.scan(".controllers")
     config.scan(".transaction.controllers")

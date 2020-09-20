@@ -15,10 +15,12 @@ with open(conffile, "r") as f:
 
 from qdserver import main
 
-app = main({
-    "sqlalchemy.url": config["db"]["url"],
-    "sqlalchemy.echo": config["db"]["echo"],
-})
+app = main(
+    {
+        "sqlalchemy.url": config["db"]["url"],
+        "sqlalchemy.echo": config["db"]["echo"],
+    }
+)
 
 server = make_server(config["http"]["host"], config["http"]["port"], app)
 print("Serving on {}:{} ...".format(config["http"]["host"], config["http"]["port"]))

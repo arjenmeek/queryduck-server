@@ -1,6 +1,7 @@
 from queryduck.serialization import get_native_vtype
 from queryduck.types import Statement, Blob, value_types, value_comparison_methods
 
+
 def process_db_row(db_row, db_columns, db_entities):
     for try_vtype, options in value_types.items():
         column = db_columns[options["column_name"]]
@@ -23,6 +24,7 @@ def process_db_row(db_row, db_columns, db_entities):
 
     return v, vtype
 
+
 def prepare_for_db(native_value):
     vtype = get_native_vtype(native_value)
     if vtype in ("s", "blob"):
@@ -30,6 +32,7 @@ def prepare_for_db(native_value):
     else:
         value = native_value
     return value, value_types[vtype]["column_name"]
+
 
 def column_compare(value, op, columns):
     vtype = get_native_vtype(value[0] if type(value) == list else value)

@@ -11,7 +11,6 @@ from .utility import process_db_row, column_compare, prepare_for_db
 
 
 class PGRepository:
-
     def __init__(self, db):
         """Make relevant services available."""
         self.db = db
@@ -52,14 +51,15 @@ class PGRepository:
         insert = statement_table.insert().values(uuid=uuid_)
         (insert_id,) = self.db.execute(insert).inserted_primary_key
         values = {k: (insert_id if v is None else v) for k, v in kwargs.items()}
-        where = statement_table.c.id==insert_id
+        where = statement_table.c.id == insert_id
         update = statement_table.update().where(where).values(values)
         self.db.execute(update)
         return insert_id
 
     def create_statements(self, statements):
-        all_values = set([v for statement in statements
-            for v in (statement,) + statement.triple])
+        all_values = set(
+            [v for statement in statements for v in (statement,) + statement.triple]
+        )
 
         all_uuids = set([v.uuid for v in all_values if type(v) == Statement])
 
@@ -106,9 +106,12 @@ class PGRepository:
         # actually upsert the rows
         if insert_values:
             ins = pg_insert(statement_table).values(insert_values)
-            on_conflict_set = {cn: getattr(ins.excluded, cn)
-                for cn in all_column_names if cn != "uuid"}
-            upd = ins.on_conflict_do_update(index_elements=["uuid"], set_=on_conflict_set)
+            on_conflict_set = {
+                cn: getattr(ins.excluded, cn) for cn in all_column_names if cn != "uuid"
+            }
+            upd = ins.on_conflict_do_update(
+                index_elements=["uuid"], set_=on_conflict_set
+            )
             self.db.execute(upd)
 
         return statements
@@ -151,13 +154,12 @@ class PGRepository:
 
         # If you"re reading this and have suggestions on a cleaner style that
         # doesn"t exceed 80 columns, please let me know!
-        select_from = main\
-            .join(su, su.c.id==main.c.subject_id, isouter=True)\
-            .join(pr, pr.c.id==main.c.predicate_id, isouter=True)\
-            .join(ob, ob.c.id==main.c.object_statement_id, isouter=True)\
-            .join(blob_table,
-                blob_table.c.id==main.c.object_blob_id, isouter=True)\
-
+        select_from = (
+            main.join(su, su.c.id == main.c.subject_id, isouter=True)
+            .join(pr, pr.c.id == main.c.predicate_id, isouter=True)
+            .join(ob, ob.c.id == main.c.object_statement_id, isouter=True)
+            .join(blob_table, blob_table.c.id == main.c.object_blob_id, isouter=True)
+        )
         columns = [
             main,
             su.c.uuid,
@@ -198,8 +200,8 @@ class PGRepository:
         processed = []
         for row in results:
             statement = Statement(
-                uuid_=row[entities["main"].c.uuid],
-                id_=row[entities["main"].c.id])
+                uuid_=row[entities["main"].c.uuid], id_=row[entities["main"].c.id]
+            )
             if row[entities["su"].c.uuid]:
                 statement.triple = (
                     Statement(uuid_=row[entities["su"].c.uuid]),
@@ -221,17 +223,23 @@ class PGRepository:
             if type(statement) not in (Statement, Blob):
                 continue
             if type(statement) == Statement:
-                s = select([statement_table.c.id], limit=1).where(statement_table.c.uuid==statement.uuid)
+                s = select([statement_table.c.id], limit=1).where(
+                    statement_table.c.uuid == statement.uuid
+                )
                 result = self.db.execute(s)
             elif type(statement) == Blob:
-                s = select([blob_table.c.id], limit=1).where(blob_table.c.sha256==statement.sha256)
+                s = select([blob_table.c.id], limit=1).where(
+                    blob_table.c.sha256 == statement.sha256
+                )
                 result = self.db.execute(s)
             row = result.fetchone()
             statement.id = row["id"] if row else -1
 
     def get_statement_id_map(self, statements):
         uuids = [s.uuid for s in statements]
-        sel = select([statement_table.c.id, statement_table.c.uuid]).where(statement_table.c.uuid.in_(uuids))
+        sel = select([statement_table.c.id, statement_table.c.uuid]).where(
+            statement_table.c.uuid.in_(uuids)
+        )
         result = self.db.execute(sel)
         id_map = {u: i for i, u in result.fetchall()}
         return id_map
@@ -267,14 +275,21 @@ class PGRepository:
 
         blobs_by_id = {b.id: b for b in blobs}
 
-        select_from = file_table.join(volume_table,
-            volume_table.c.id==file_table.c.volume_id, isouter=True)
+        select_from = file_table.join(
+            volume_table, volume_table.c.id == file_table.c.volume_id, isouter=True
+        )
 
-        sel = select([
-            file_table.c.blob_id,
-            file_table.c.path,
-            volume_table.c.reference,
-        ]).select_from(select_from).where(file_table.c.blob_id.in_(blobs_by_id.keys()))
+        sel = (
+            select(
+                [
+                    file_table.c.blob_id,
+                    file_table.c.path,
+                    volume_table.c.reference,
+                ]
+            )
+            .select_from(select_from)
+            .where(file_table.c.blob_id.in_(blobs_by_id.keys()))
+        )
         result = self.db.execute(sel)
 
         files = defaultdict(list)
@@ -288,19 +303,25 @@ class PGRepository:
         return files
 
     def get_file_blob(self, file_):
-        select_from = file_table\
-            .join(volume_table, volume_table.c.id==file_table.c.volume_id,
-                isouter=True)\
-            .join(blob_table, blob_table.c.id==file_table.c.blob_id,
-                isouter=True)
+        select_from = file_table.join(
+            volume_table, volume_table.c.id == file_table.c.volume_id, isouter=True
+        ).join(blob_table, blob_table.c.id == file_table.c.blob_id, isouter=True)
 
-        sel = select([
-            blob_table.c.id,
-            blob_table.c.sha256,
-        ]).select_from(select_from).where(and_(
-            volume_table.c.reference==file_.volume,
-            file_table.c.path==file_.path
-        ))
+        sel = (
+            select(
+                [
+                    blob_table.c.id,
+                    blob_table.c.sha256,
+                ]
+            )
+            .select_from(select_from)
+            .where(
+                and_(
+                    volume_table.c.reference == file_.volume,
+                    file_table.c.path == file_.path,
+                )
+            )
+        )
         res = self.db.execute(sel)
         id_, sha256 = res.fetchone()
         blob = Blob(sha256=sha256, id_=id_)

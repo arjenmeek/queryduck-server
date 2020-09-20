@@ -49,15 +49,19 @@ class TransactionController(BaseController):
     def submit_transaction(self):
         statements = self.sc.deserialize_rows(self.request.json_body)
         transaction_statements = self._wrap_transaction(statements)
-        all_statements = self.repo.create_statements(statements + transaction_statements)
-        #[print(s, s.triple) for s in statements]
+        all_statements = self.repo.create_statements(
+            statements + transaction_statements
+        )
+        # [print(s, s.triple) for s in statements]
 
         result = {
             "statements": {},
         }
 
         for statement in statements:
-            result["statements"][serialize(statement)] = [serialize(e) for e in statement.triple]
+            result["statements"][serialize(statement)] = [
+                serialize(e) for e in statement.triple
+            ]
 
         return result
 
@@ -69,11 +73,19 @@ class TransactionController(BaseController):
             transaction,
             Statement(uuid.uuid4(), triple=(transaction, b.type, b.Transaction)),
             Statement(uuid.uuid4(), triple=(transaction, b.createdAt, dt.now())),
-            Statement(uuid.uuid4(), triple=(transaction, b.createdBy, self.request.authenticated_userid)),
-            Statement(uuid.uuid4(), triple=(transaction, b.statementCount, len(statements))),
+            Statement(
+                uuid.uuid4(),
+                triple=(transaction, b.createdBy, self.request.authenticated_userid),
+            ),
+            Statement(
+                uuid.uuid4(), triple=(transaction, b.statementCount, len(statements))
+            ),
         ]
         for statement in statements:
-            transaction_statements.append(Statement(uuid.uuid4(),
-                triple=(transaction, b.transactionContains, statement)))
+            transaction_statements.append(
+                Statement(
+                    uuid.uuid4(), triple=(transaction, b.transactionContains, statement)
+                )
+            )
         final_statements = [self.repo.unique_add(s) for s in transaction_statements]
         return final_statements

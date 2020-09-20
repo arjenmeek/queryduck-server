@@ -24,7 +24,6 @@ from .utility import process_db_row, column_compare, prepare_for_db
 
 
 class PGQuery:
-
     def __init__(self, repo, query, target, after=None):
         self.repo = repo
         self.query = query
@@ -44,10 +43,11 @@ class PGQuery:
     def _apply_join(self, key, rhs_column, v, t):
         lhs_name, id_name = key.get_join_columns(v, t)
         a = statement_table.alias()
-        self.select_from = self.select_from.join(a,
-            and_(a.c[lhs_name]==rhs_column,
-                a.c.predicate_id==key.value.id),
-            isouter=True)
+        self.select_from = self.select_from.join(
+            a,
+            and_(a.c[lhs_name] == rhs_column, a.c.predicate_id == key.value.id),
+            isouter=True,
+        )
         self.stack.append((v, a, id_name))
 
     def apply_query(self, query):
@@ -73,7 +73,9 @@ class PGQuery:
                         q = self.repo.get_file_blob(q)
                     self.wheres.append(column_compare(q, "eq", t.c))
                 else:
-                    self.wheres.append(t.c[c]==(q.id if type(q) in (Statement,) else q))
+                    self.wheres.append(
+                        t.c[c] == (q.id if type(q) in (Statement,) else q)
+                    )
 
     def apply_additonal_query(self):
         main_ids = [s.id for s in self.results]
@@ -88,32 +90,43 @@ class PGQuery:
                     if type(k) in (MatchObject, FetchObject):
                         object_predicates.append(k.value)
                         if type(v) == dict:
-                            new_subq = select([statement_table.c.object_statement_id])\
-                                .where(and_(
+                            new_subq = select(
+                                [statement_table.c.object_statement_id]
+                            ).where(
+                                and_(
                                     statement_table.c.subject_id.in_(subq),
-                                    statement_table.c.predicate_id==k.value.id,
-                                ))
+                                    statement_table.c.predicate_id == k.value.id,
+                                )
+                            )
                             self.additional_stack.append((v, new_subq, statement_table))
                     elif type(k) in (MatchSubject, FetchSubject):
                         subject_predicates.append(k.value)
                         if type(v) == dict:
                             if target == blob_table:
-                                new_subq = select([statement_table.c.subject_id])\
-                                    .where(and_(
+                                new_subq = select([statement_table.c.subject_id]).where(
+                                    and_(
                                         statement_table.c.object_blob_id.in_(subq),
-                                        statement_table.c.object_blob_id!=None,
-                                        statement_table.c.predicate_id==k.value.id,
-                                    ))
-                                self.additional_stack.append((v, new_subq, statement_table))
+                                        statement_table.c.object_blob_id != None,
+                                        statement_table.c.predicate_id == k.value.id,
+                                    )
+                                )
+                                self.additional_stack.append(
+                                    (v, new_subq, statement_table)
+                                )
                             else:
-                                new_subq = select([statement_table.c.subject_id])\
-                                    .where(and_(
+                                new_subq = select([statement_table.c.subject_id]).where(
+                                    and_(
                                         statement_table.c.object_statement_id.in_(subq),
-                                        statement_table.c.predicate_id==k.value.id,
-                                    ))
-                                self.additional_stack.append((v, new_subq, statement_table))
+                                        statement_table.c.predicate_id == k.value.id,
+                                    )
+                                )
+                                self.additional_stack.append(
+                                    (v, new_subq, statement_table)
+                                )
             if len(object_predicates):
-                sbj = select([statement_table.c.id]).where(statement_table.c.subject_id.in_(subq))
+                sbj = select([statement_table.c.id]).where(
+                    statement_table.c.subject_id.in_(subq)
+                )
 
                 if not None in object_predicates:
                     pred_ids = [s.id for s in object_predicates]
@@ -122,12 +135,16 @@ class PGQuery:
 
             if len(subject_predicates):
                 if target == blob_table:
-                    obj = select([statement_table.c.id]).where(and_(
-                        statement_table.c.object_blob_id.in_(subq),
-                        statement_table.c.object_blob_id!=None
-                    ))
+                    obj = select([statement_table.c.id]).where(
+                        and_(
+                            statement_table.c.object_blob_id.in_(subq),
+                            statement_table.c.object_blob_id != None,
+                        )
+                    )
                 else:
-                    obj = select([statement_table.c.id]).where(statement_table.c.object_statement_id.in_(subq))
+                    obj = select([statement_table.c.id]).where(
+                        statement_table.c.object_statement_id.in_(subq)
+                    )
 
                 if not None in subject_predicates:
                     pred_ids = [s.id for s in subject_predicates]
@@ -141,29 +158,43 @@ class PGQuery:
             return self._get_statement_results()
 
     def _get_blob_results(self):
-        s = select([self.target.c.id, blob_table.c.sha256]).select_from(self.select_from)
-        s = s.where(and_(*self.wheres)).distinct(self.target.c.sha256).limit(self.limit + 1)
+        s = select([self.target.c.id, blob_table.c.sha256]).select_from(
+            self.select_from
+        )
+        s = (
+            s.where(and_(*self.wheres))
+            .distinct(self.target.c.sha256)
+            .limit(self.limit + 1)
+        )
         if self.after is not None:
             s = s.where(self.target.c.sha256 > self.after.sha256)
         s = s.order_by(self.target.c.sha256)
-        #print("DBQUERY", s.compile(dialect=self.db.dialect, compile_kwargs={"literal_binds": True}))
+        # print("DBQUERY", s.compile(dialect=self.db.dialect, compile_kwargs={"literal_binds": True}))
         resultset = self.db.execute(s)
-        self.results = [Blob(sha256=r_sha256, id_=r_id)
-            for r_id, r_sha256 in islice(resultset, self.limit)]
-        more = (resultset.rowcount > self.limit)
+        self.results = [
+            Blob(sha256=r_sha256, id_=r_id)
+            for r_id, r_sha256 in islice(resultset, self.limit)
+        ]
+        more = resultset.rowcount > self.limit
         return self.results, more
 
     def _get_statement_results(self):
         s = select([self.target.c.id, self.target.c.uuid]).select_from(self.select_from)
-        s = s.where(and_(*self.wheres)).distinct(self.target.c.uuid).limit(self.limit + 1)
+        s = (
+            s.where(and_(*self.wheres))
+            .distinct(self.target.c.uuid)
+            .limit(self.limit + 1)
+        )
         if self.after is not None:
             s = s.where(self.target.c.uuid > self.after.uuid)
         s = s.order_by(self.target.c.uuid)
-        #print("DBQUERY", s.compile(dialect=self.db.dialect, compile_kwargs={"literal_binds": True}))
+        # print("DBQUERY", s.compile(dialect=self.db.dialect, compile_kwargs={"literal_binds": True}))
         resultset = self.db.execute(s)
-        self.results = [Statement(uuid_=r_uuid, id_=r_id)
-            for r_id, r_uuid in islice(resultset, self.limit)]
-        more = (resultset.rowcount > self.limit)
+        self.results = [
+            Statement(uuid_=r_uuid, id_=r_id)
+            for r_id, r_uuid in islice(resultset, self.limit)
+        ]
+        more = resultset.rowcount > self.limit
         return self.results, more
 
     def get_result_values(self):
@@ -177,7 +208,7 @@ class PGQuery:
         self.apply_additonal_query()
         blob_ids = [s.id for s in self.results]
         ids = []
-        #[print("ADDITIONAL", a.compile(dialect=self.db.dialect, compile_kwargs={"literal_binds": True})) for a in self.additionals]
+        # [print("ADDITIONAL", a.compile(dialect=self.db.dialect, compile_kwargs={"literal_binds": True})) for a in self.additionals]
 
         for additional in self.additionals:
             res = self.db.execute(additional)
@@ -186,13 +217,12 @@ class PGQuery:
         s, entities = self.repo.select_full_statements(statement_table)
         where = statement_table.c.id.in_(allids)
         s = s.where(where).distinct(statement_table.c.id)
-        #print("ADBQUERY", s.compile(dialect=self.db.dialect, compile_kwargs={"literal_binds": True}))
+        # print("ADBQUERY", s.compile(dialect=self.db.dialect, compile_kwargs={"literal_binds": True}))
 
         results = self.db.execute(s)
         statements = self.repo.process_result_statements(results, entities)
-        #print("RETURNING", statements)
+        # print("RETURNING", statements)
         return statements
-
 
         blob_ids = [b.id for b in self.results]
 
@@ -201,8 +231,9 @@ class PGQuery:
         main_alias = statement_table.alias("main")
 
         sub_alias = statement_table.alias("sub")
-        sub_from = main_alias.join(sub_alias,
-            sub_alias.c.subject_id==main_alias.c.subject_id)
+        sub_from = main_alias.join(
+            sub_alias, sub_alias.c.subject_id == main_alias.c.subject_id
+        )
         sub = select([sub_alias.c.id]).select_from(sub_from)
         sub = sub.where(main_alias.c.object_blob_id.in_(blob_ids))
 
@@ -212,7 +243,9 @@ class PGQuery:
         where = or_(
             statement_table.c.id.in_(sub_ids),
         )
-        s = s.where(and_(where, statement_table.c.subject_id!=None)).distinct(statement_table.c.id)
+        s = s.where(and_(where, statement_table.c.subject_id != None)).distinct(
+            statement_table.c.id
+        )
 
         results = self.db.execute(s)
         statements = self.repo.process_result_statements(results, entities)
@@ -222,7 +255,7 @@ class PGQuery:
         self.apply_additonal_query()
         main_ids = [s.id for s in self.results]
         ids = main_ids[:]
-        #[print("ADDITIONAL", a.compile(dialect=self.db.dialect, compile_kwargs={"literal_binds": True})) for a in self.additionals]
+        # [print("ADDITIONAL", a.compile(dialect=self.db.dialect, compile_kwargs={"literal_binds": True})) for a in self.additionals]
 
         for additional in self.additionals:
             res = self.db.execute(additional)
