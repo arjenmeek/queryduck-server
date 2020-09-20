@@ -39,7 +39,7 @@ class PGQuery:
         self.additional_stack = []
         self.additionals = []
         self.apply_query(query)
-        self.limit = 5000
+        self.limit = 1000
 
     def _apply_join(self, key, rhs_column, v, t):
         lhs_name, id_name = key.get_join_columns(v, t)
