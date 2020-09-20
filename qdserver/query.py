@@ -51,7 +51,7 @@ class PGQuery:
         self.stack.append((v, a, id_name))
 
     def apply_query(self, query):
-        self.stack.append((query, self.target, 'id'))
+        self.stack.append((query, self.target, "id"))
         while self.stack:
             q, t, c = self.stack.pop()
             # q = subquery
@@ -68,10 +68,10 @@ class PGQuery:
                     else:
                         self.wheres.append(column_compare(v, k, t.c))
             else:
-                if c in ('object_statement_id',):
+                if c in ("object_statement_id",):
                     if type(q) == File:
                         q = self.repo.get_file_blob(q)
-                    self.wheres.append(column_compare(q, 'eq', t.c))
+                    self.wheres.append(column_compare(q, "eq", t.c))
                 else:
                     self.wheres.append(t.c[c]==(q.id if type(q) in (Statement,) else q))
 
@@ -198,9 +198,9 @@ class PGQuery:
 
         s, entities = self.repo.select_full_statements(statement_table)
 
-        main_alias = statement_table.alias('main')
+        main_alias = statement_table.alias("main")
 
-        sub_alias = statement_table.alias('sub')
+        sub_alias = statement_table.alias("sub")
         sub_from = main_alias.join(sub_alias,
             sub_alias.c.subject_id==main_alias.c.subject_id)
         sub = select([sub_alias.c.id]).select_from(sub_from)

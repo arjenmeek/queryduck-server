@@ -40,7 +40,7 @@ class PGRepository:
                 value = new_value
                 self.blob_map[value.sha256] = value
         else:
-            # simple scalar value, doesn't need to be uniqueified
+            # simple scalar value, doesn"t need to be uniqueified
             value = new_value
 
         return value
@@ -69,10 +69,10 @@ class PGRepository:
             self.unique_add(b)
 
         # create all Statements without values, ignoring duplicates
-        # (duplicates are OK if they are identical, we'll check this later)
-        values = [{'uuid': u} for u in all_uuids]
+        # (duplicates are OK if they are identical, we"ll check this later)
+        values = [{"uuid": u} for u in all_uuids]
         stmt = pg_insert(statement_table).values(values)
-        stmt = stmt.on_conflict_do_nothing(index_elements=['uuid'])
+        stmt = stmt.on_conflict_do_nothing(index_elements=["uuid"])
         self.db.execute(stmt)
 
         # retrieve all statements as they are now
@@ -89,15 +89,15 @@ class PGRepository:
                 continue
             value, column_name = prepare_for_db(statement.triple[2])
             insert_value = {
-                'uuid': statement.uuid,
-                'subject_id': statement.triple[0].id,
-                'predicate_id': statement.triple[1].id,
+                "uuid": statement.uuid,
+                "subject_id": statement.triple[0].id,
+                "predicate_id": statement.triple[1].id,
                 column_name: value,
             }
             insert_values.append(insert_value)
             all_column_names |= insert_value.keys()
 
-        # ensure every row has a value for every column, even if it's None
+        # ensure every row has a value for every column, even if it"s None
         for insert_value in insert_values:
             for column_name in all_column_names:
                 if column_name not in insert_value:
@@ -107,8 +107,8 @@ class PGRepository:
         if insert_values:
             ins = pg_insert(statement_table).values(insert_values)
             on_conflict_set = {cn: getattr(ins.excluded, cn)
-                for cn in all_column_names if cn != 'uuid'}
-            upd = ins.on_conflict_do_update(index_elements=['uuid'], set_=on_conflict_set)
+                for cn in all_column_names if cn != "uuid"}
+            upd = ins.on_conflict_do_update(index_elements=["uuid"], set_=on_conflict_set)
             self.db.execute(upd)
 
         return statements
@@ -131,7 +131,7 @@ class PGRepository:
         s, entities = self.select_full_statements(statement_table, blob_files=False)
         s = select([blob_table]).where(blob_table.c.sha256.in_(sums))
         results = self.db.execute(s)
-        blobs = [Blob(sha256=r['sha256'], id_=r['id']) for r in results]
+        blobs = [Blob(sha256=r["sha256"], id_=r["id"]) for r in results]
         return blobs
 
     @staticmethod
@@ -141,16 +141,16 @@ class PGRepository:
         pr = statement_table.alias()
         ob = statement_table.alias()
         entities = {
-            'main': main,
-            's': ob,
-            'su': su,
-            'pr': pr,
-            'ob': ob,
-            'blob': blob_table,
+            "main": main,
+            "s": ob,
+            "su": su,
+            "pr": pr,
+            "ob": ob,
+            "blob": blob_table,
         }
 
-        # If you're reading this and have suggestions on a cleaner style that
-        # doesn't exceed 80 columns, please let me know!
+        # If you"re reading this and have suggestions on a cleaner style that
+        # doesn"t exceed 80 columns, please let me know!
         select_from = main\
             .join(su, su.c.id==main.c.subject_id, isouter=True)\
             .join(pr, pr.c.id==main.c.predicate_id, isouter=True)\
@@ -173,11 +173,11 @@ class PGRepository:
     def process_result_rows(results, entities):
         processed = []
         for row in results:
-            statement = self.unique_add(Statement(uuid_=row[entities['main'].c.uuid]))
+            statement = self.unique_add(Statement(uuid_=row[entities["main"].c.uuid]))
             statement.triple = (
-                self.unique_add(Statement(uuid_=row[entities['su'].c.uuid])),
-                self.unique_add(Statement(uuid_=row[entities['pr'].c.uuid])),
-                self.unique_add(process_db_row(row, entities['main'].c, entities)[0]),
+                self.unique_add(Statement(uuid_=row[entities["su"].c.uuid])),
+                self.unique_add(Statement(uuid_=row[entities["pr"].c.uuid])),
+                self.unique_add(process_db_row(row, entities["main"].c, entities)[0]),
             )
         return processed
 
@@ -186,10 +186,10 @@ class PGRepository:
         processed = []
         for row in results:
             elements = (
-                Statement(uuid_=row[entities['main'].c.uuid]),
-                Statement(uuid_=row[entities['su'].c.uuid]),
-                Statement(uuid_=row[entities['pr'].c.uuid]),
-                process_db_row(row, entities['main'].c, entities)[0],
+                Statement(uuid_=row[entities["main"].c.uuid]),
+                Statement(uuid_=row[entities["su"].c.uuid]),
+                Statement(uuid_=row[entities["pr"].c.uuid]),
+                process_db_row(row, entities["main"].c, entities)[0],
             )
             processed.append(elements)
         return processed
@@ -198,13 +198,13 @@ class PGRepository:
         processed = []
         for row in results:
             statement = Statement(
-                uuid_=row[entities['main'].c.uuid],
-                id_=row[entities['main'].c.id])
-            if row[entities['su'].c.uuid]:
+                uuid_=row[entities["main"].c.uuid],
+                id_=row[entities["main"].c.id])
+            if row[entities["su"].c.uuid]:
                 statement.triple = (
-                    Statement(uuid_=row[entities['su'].c.uuid]),
-                    Statement(uuid_=row[entities['pr'].c.uuid]),
-                    process_db_row(row, entities['main'].c, entities)[0],
+                    Statement(uuid_=row[entities["su"].c.uuid]),
+                    Statement(uuid_=row[entities["pr"].c.uuid]),
+                    process_db_row(row, entities["main"].c, entities)[0],
                 )
                 statement.saved = True
             statement = self.unique_add(statement)
@@ -227,7 +227,7 @@ class PGRepository:
                 s = select([blob_table.c.id], limit=1).where(blob_table.c.sha256==statement.sha256)
                 result = self.db.execute(s)
             row = result.fetchone()
-            statement.id = row['id'] if row else -1
+            statement.id = row["id"] if row else -1
 
     def get_statement_id_map(self, statements):
         uuids = [s.uuid for s in statements]
@@ -248,16 +248,16 @@ class PGRepository:
                 missing.append(s)
 
         if missing and allow_create:
-            ins = statement_table.insert().values([{'uuid': s.uuid} for s in missing])
+            ins = statement_table.insert().values([{"uuid": s.uuid} for s in missing])
             self.db.execute(ins)
             id_map = self.get_statement_id_map(missing)
             for s in missing:
                 s.id = id_map[s.uuid]
 
     def get_target_table(self, target_name):
-        if target_name == 'blob':
+        if target_name == "blob":
             target = blob_table
-        elif target_name == 'statement':
+        elif target_name == "statement":
             target = statement_table
         return target
 

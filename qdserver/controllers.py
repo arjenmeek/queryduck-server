@@ -31,60 +31,60 @@ class StatementController(BaseController):
 
     ### View methods ###
 
-    @view_config(route_name='create_statements', renderer='json')
+    @view_config(route_name="create_statements", renderer="json")
     def create_statements(self):
         statements = self.deserialize_rows(self.request.json_body)
         statements = self.repo.create_statements(statements)
 
         result = {
-            'statements': [],
+            "statements": [],
         }
 
         for statement in statements:
-            result['statements'].append([serialize(v)
+            result["statements"].append([serialize(v)
                 for v in (statement,) + statement.triple])
 
         return result
 
-    @view_config(route_name='get_statement', renderer='json')
+    @view_config(route_name="get_statement", renderer="json")
     def get_statement(self):
-        reference = self.request.matchdict['reference']
+        reference = self.request.matchdict["reference"]
         statement = deserialize(reference)
         self.repo.fill_ids(statement)
         result = {
-            'reference': serialize(statement),
-            'statements': self.repo.get_statement_values([statement]),
+            "reference": serialize(statement),
+            "statements": self.repo.get_statement_values([statement]),
         }
         return result
 
-    @view_config(route_name='get_statements', renderer='json')
+    @view_config(route_name="get_statements", renderer="json")
     def get_statements(self):
         quads = self.repo.get_all_statements()
 
         result = {
-            'statements': [],
+            "statements": [],
         }
 
         for q in quads:
-            result['statements'].append([serialize(e) for e in q])
+            result["statements"].append([serialize(e) for e in q])
 
         return result
 
-    @view_config(route_name='query_statements', renderer='json')
+    @view_config(route_name="query_statements", renderer="json")
     def query_statements(self):
         print("QUERY BODY:", self.request.body)
         body = self.request.json_body
-        if 'target' in body:
-            target = self.repo.get_target_table(body['target'])
+        if "target" in body:
+            target = self.repo.get_target_table(body["target"])
         else:
-            target = self.repo.get_target_table('statement')
+            target = self.repo.get_target_table("statement")
 
-        if 'after' in body and body['after'] is not None:
-            after = self.unique_deserialize(body['after'])
+        if "after" in body and body["after"] is not None:
+            after = self.unique_deserialize(body["after"])
         else:
             after = None
 
-        query = self._prepare_query(body['query'])
+        query = self._prepare_query(body["query"])
         pgquery = PGQuery(self.repo, query, target, after=after)
         reference_statements, more = pgquery.get_results()
         statements = pgquery.get_result_values()
@@ -94,10 +94,10 @@ class StatementController(BaseController):
         print("Query results: {} primary, {} additional, {} files".format(
                 len(reference_statements), len(statements), len(files)))
         result = {
-            'references': [serialize(s) for s in reference_statements],
-            'statements': self.statements_to_dict(statements),
-            'files': self.serialize_files(files),
-            'more': more,
+            "references": [serialize(s) for s in reference_statements],
+            "statements": self.statements_to_dict(statements),
+            "files": self.serialize_files(files),
+            "more": more,
         }
         return result
 
@@ -126,7 +126,7 @@ class StatementController(BaseController):
         return v
 
     def deserialize_rows(self, serialized_rows):
-        # create initial Statements without values, but with final UUID's
+        # create initial Statements without values, but with final UUID"s
         statements = []
         for row in serialized_rows:
             if row[0] is None:
@@ -136,7 +136,7 @@ class StatementController(BaseController):
                 statement = self.unique_deserialize(row[0])
             statements.append(statement)
 
-        # fill Statement values and create set of all UUID's involved
+        # fill Statement values and create set of all UUID"s involved
         for idx, row in enumerate(serialized_rows):
             statements[idx].triple = tuple([self.unique_deserialize(ser)
                 if type(ser) == str else statements[ser] for ser in row[1:]])
@@ -150,7 +150,7 @@ class StatementController(BaseController):
         values = []
         def deserialize_reference(ref):
             v = deserialize(ref)
-            if hasattr(v, 'value'):
+            if hasattr(v, "value"):
                 values.append(v.value)
             else:
                 values.append(v)

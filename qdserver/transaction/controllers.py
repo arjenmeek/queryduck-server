@@ -30,7 +30,7 @@ class TransactionController(BaseController):
     def _bindings_from_schemas(self, schemas):
         bindings_content = {}
         for schema in schemas:
-            for k, v in schema['bindings'].items():
+            for k, v in schema["bindings"].items():
                 bindings_content[k] = self.sc.unique_deserialize(v)
         bindings = Bindings(bindings_content)
         return bindings
@@ -39,13 +39,13 @@ class TransactionController(BaseController):
         if self._bindings is None:
             schemas = []
             for filename in DEFAULT_SCHEMA_FILES:
-                filepath = '../queryduck/queryduck/schemas/{}'.format(filename)
-                with open(filepath, 'r') as f:
+                filepath = "../queryduck/queryduck/schemas/{}".format(filename)
+                with open(filepath, "r") as f:
                     schemas.append(json.load(f))
             self._bindings = self._bindings_from_schemas(schemas)
         return self._bindings
 
-    @view_config(route_name='submit_transaction', renderer='json', permission='create')
+    @view_config(route_name="submit_transaction", renderer="json", permission="create")
     def submit_transaction(self):
         statements = self.sc.deserialize_rows(self.request.json_body)
         transaction_statements = self._wrap_transaction(statements)
@@ -53,11 +53,11 @@ class TransactionController(BaseController):
         #[print(s, s.triple) for s in statements]
 
         result = {
-            'statements': {},
+            "statements": {},
         }
 
         for statement in statements:
-            result['statements'][serialize(statement)] = [serialize(e) for e in statement.triple]
+            result["statements"][serialize(statement)] = [serialize(e) for e in statement.triple]
 
         return result
 
