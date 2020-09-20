@@ -39,7 +39,7 @@ class TransactionController(BaseController):
         if self._bindings is None:
             schemas = []
             for filename in DEFAULT_SCHEMA_FILES:
-                filepath = '../queryduck/schemas/{}'.format(filename)
+                filepath = '../queryduck/queryduck/schemas/{}'.format(filename)
                 with open(filepath, 'r') as f:
                     schemas.append(json.load(f))
             self._bindings = self._bindings_from_schemas(schemas)
