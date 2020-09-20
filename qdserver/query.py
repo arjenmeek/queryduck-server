@@ -101,6 +101,7 @@ class PGQuery:
                                 new_subq = select([statement_table.c.subject_id])\
                                     .where(and_(
                                         statement_table.c.object_blob_id.in_(subq),
+                                        statement_table.c.object_blob_id!=None,
                                         statement_table.c.predicate_id==k.value.id,
                                     ))
                                 self.additional_stack.append((v, new_subq, statement_table))
@@ -121,7 +122,10 @@ class PGQuery:
 
             if len(subject_predicates):
                 if target == blob_table:
-                    obj = select([statement_table.c.id]).where(statement_table.c.object_blob_id.in_(subq))
+                    obj = select([statement_table.c.id]).where(and_(
+                        statement_table.c.object_blob_id.in_(subq),
+                        statement_table.c.object_blob_id!=None
+                    ))
                 else:
                     obj = select([statement_table.c.id]).where(statement_table.c.object_statement_id.in_(subq))
 
