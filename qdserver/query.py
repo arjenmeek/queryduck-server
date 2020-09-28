@@ -214,9 +214,8 @@ class PGQuery:
         )
         if self.after is not None:
             sub = sub.where(self.target.c.uuid > self.after.uuid)
-        #            .limit(self.limit + 1)
-        sub = sub.alias("mysubquery")
         if self.order_by or self.final_wheres:
+            sub = sub.alias("mysubquery")
             s = select([sub]).select_from(sub)
             wheres = []
             for column_label, op_method, db_value in self.final_wheres:
@@ -231,7 +230,7 @@ class PGQuery:
                 s = s.order_by(*order_by)
         else:
             s = sub
-            s = s.order_by(self.target.c.uuid)
+        s = s.limit(self.limit + 1)
         print(
             "DBQUERY",
             s.compile(dialect=self.db.dialect, compile_kwargs={"literal_binds": True}),
