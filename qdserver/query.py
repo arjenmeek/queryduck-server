@@ -20,7 +20,12 @@ from queryduck.types import (
 )
 
 from .models import statement_table, blob_table, file_table, volume_table
-from .utility import process_db_row, column_compare, prepare_for_db
+from .utility import (
+    process_db_row,
+    column_compare,
+    final_column_compare,
+    prepare_for_db,
+)
 
 
 class PGQuery:
@@ -33,12 +38,16 @@ class PGQuery:
         self.db = self.repo.db
         self.select_from = self.target
         self.wheres = []
+        self.final_wheres = []
+        self.extra_columns = []
         self.results = None
         self.stack = []
         self.additional_stack = []
         self.additionals = []
+        self.prefer_by = []
+        self.order_by = []
         self.apply_query(query)
-        self.limit = 1000
+        self.limit = 5000
 
     def _apply_join(self, key, rhs_column, v, t):
         lhs_name, id_name = key.get_join_columns(v, t)
@@ -66,7 +75,23 @@ class PGQuery:
                     elif type(k) in (FetchObject, FetchSubject):
                         pass
                     else:
-                        self.wheres.append(column_compare(v, k, t.c))
+                        if k == "sort":
+                            self.order_by.append(t.c["object_" + v].label(None))
+                        elif k == "prefer+":
+                            self.prefer_by.append(t.c["object_" + v].desc())
+                        else:
+                            if k.endswith("."):
+                                (
+                                    column_label,
+                                    op_method,
+                                    db_value,
+                                ) = final_column_compare(v, k[:-1], t.c)
+                                self.final_wheres.append(
+                                    (column_label, op_method, db_value)
+                                )
+                                self.extra_columns.append(column_label)
+                            else:
+                                self.wheres.append(column_compare(v, k, t.c))
             else:
                 if c in ("object_statement_id",):
                     if type(q) == File:
@@ -179,20 +204,41 @@ class PGQuery:
         return self.results, more
 
     def _get_statement_results(self):
-        s = select([self.target.c.id, self.target.c.uuid]).select_from(self.select_from)
-        s = (
-            s.where(and_(*self.wheres))
+        sub = select(
+            [self.target.c.id, self.target.c.uuid] + self.order_by + self.extra_columns
+        ).select_from(self.select_from)
+        sub = (
+            sub.where(and_(*self.wheres))
             .distinct(self.target.c.uuid)
-            .limit(self.limit + 1)
+            .order_by(self.target.c.uuid, *self.prefer_by)
         )
         if self.after is not None:
-            s = s.where(self.target.c.uuid > self.after.uuid)
-        s = s.order_by(self.target.c.uuid)
-        # print("DBQUERY", s.compile(dialect=self.db.dialect, compile_kwargs={"literal_binds": True}))
+            sub = sub.where(self.target.c.uuid > self.after.uuid)
+        #            .limit(self.limit + 1)
+        sub = sub.alias("mysubquery")
+        if self.order_by or self.final_wheres:
+            s = select([sub]).select_from(sub)
+            wheres = []
+            for column_label, op_method, db_value in self.final_wheres:
+                column = sub.c[column_label.name]
+                wheres.append(getattr(column, op_method)(db_value))
+            if wheres:
+                s = s.where(and_(*wheres))
+            if self.order_by is None:
+                s = s.order_by(self.target.c.uuid)
+            else:
+                order_by = [sub.c[e.name] for e in self.order_by]
+                s = s.order_by(*order_by)
+        else:
+            s = sub
+            s = s.order_by(self.target.c.uuid)
+        print(
+            "DBQUERY",
+            s.compile(dialect=self.db.dialect, compile_kwargs={"literal_binds": True}),
+        )
         resultset = self.db.execute(s)
         self.results = [
-            Statement(uuid_=r_uuid, id_=r_id)
-            for r_id, r_uuid in islice(resultset, self.limit)
+            Statement(uuid_=row[1], id_=row[0]) for row in islice(resultset, self.limit)
         ]
         more = resultset.rowcount > self.limit
         return self.results, more
