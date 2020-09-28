@@ -131,7 +131,7 @@ class StatementController(BaseController):
         return v
 
     def deserialize_rows(self, serialized_rows):
-        # create initial Statements without values, but with final UUID"s
+        # create initial Statements without values, but with final UUID's
         statements = []
         for row in serialized_rows:
             if row[0] is None:
@@ -141,7 +141,7 @@ class StatementController(BaseController):
                 statement = self.unique_deserialize(row[0])
             statements.append(statement)
 
-        # fill Statement values and create set of all UUID"s involved
+        # fill Statement values and create set of all UUID's involved
         for idx, row in enumerate(serialized_rows):
             statements[idx].triple = tuple(
                 [

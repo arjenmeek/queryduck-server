@@ -39,7 +39,7 @@ class PGRepository:
                 value = new_value
                 self.blob_map[value.sha256] = value
         else:
-            # simple scalar value, doesn"t need to be uniqueified
+            # simple scalar value, doesn't need to be uniqueified
             value = new_value
 
         return value
@@ -69,7 +69,7 @@ class PGRepository:
             self.unique_add(b)
 
         # create all Statements without values, ignoring duplicates
-        # (duplicates are OK if they are identical, we"ll check this later)
+        # (duplicates are OK if they are identical, we'll check this later)
         values = [{"uuid": u} for u in all_uuids]
         stmt = pg_insert(statement_table).values(values)
         stmt = stmt.on_conflict_do_nothing(index_elements=["uuid"])
@@ -97,7 +97,7 @@ class PGRepository:
             insert_values.append(insert_value)
             all_column_names |= insert_value.keys()
 
-        # ensure every row has a value for every column, even if it"s None
+        # ensure every row has a value for every column, even if it's None
         for insert_value in insert_values:
             for column_name in all_column_names:
                 if column_name not in insert_value:
@@ -152,8 +152,8 @@ class PGRepository:
             "blob": blob_table,
         }
 
-        # If you"re reading this and have suggestions on a cleaner style that
-        # doesn"t exceed 80 columns, please let me know!
+        # If you're reading this and have suggestions on a cleaner style that
+        # doesn't exceed 80 columns, please let me know!
         select_from = (
             main.join(su, su.c.id == main.c.subject_id, isouter=True)
             .join(pr, pr.c.id == main.c.predicate_id, isouter=True)
