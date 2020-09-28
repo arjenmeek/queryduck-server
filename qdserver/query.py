@@ -270,33 +270,6 @@ class PGQuery:
         # print("RETURNING", statements)
         return statements
 
-        blob_ids = [b.id for b in self.results]
-
-        s, entities = self.repo.select_full_statements(statement_table)
-
-        main_alias = statement_table.alias("main")
-
-        sub_alias = statement_table.alias("sub")
-        sub_from = main_alias.join(
-            sub_alias, sub_alias.c.subject_id == main_alias.c.subject_id
-        )
-        sub = select([sub_alias.c.id]).select_from(sub_from)
-        sub = sub.where(main_alias.c.object_blob_id.in_(blob_ids))
-
-        sub_res = self.db.execute(sub)
-        sub_ids = [i[0] for i in sub_res.fetchall()]
-
-        where = or_(
-            statement_table.c.id.in_(sub_ids),
-        )
-        s = s.where(and_(where, statement_table.c.subject_id != None)).distinct(
-            statement_table.c.id
-        )
-
-        results = self.db.execute(s)
-        statements = self.repo.process_result_statements(results, entities)
-        return statements
-
     def _get_statement_values(self):
         self.apply_additonal_query()
         main_ids = [s.id for s in self.results]
