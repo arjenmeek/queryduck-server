@@ -213,28 +213,6 @@ class PGRepository:
             processed.append(statement)
         return processed
 
-    def fill_ids(self, statements):
-        # TODO: Fetch all in one query
-        if type(statements) != list:
-            statements = [statements]
-        for statement in statements:
-            if type(statement) == list:
-                self.fill_ids(statement)
-            if type(statement) not in (Statement, Blob):
-                continue
-            if type(statement) == Statement:
-                s = select([statement_table.c.id], limit=1).where(
-                    statement_table.c.uuid == statement.uuid
-                )
-                result = self.db.execute(s)
-            elif type(statement) == Blob:
-                s = select([blob_table.c.id], limit=1).where(
-                    blob_table.c.sha256 == statement.sha256
-                )
-                result = self.db.execute(s)
-            row = result.fetchone()
-            statement.id = row["id"] if row else -1
-
     def get_statement_id_map(self, statements):
         uuids = [s.uuid for s in statements]
         sel = select([statement_table.c.id, statement_table.c.uuid]).where(
@@ -244,10 +222,23 @@ class PGRepository:
         id_map = {u: i for i, u in result.fetchall()}
         return id_map
 
-    def bulk_fill_ids(self, values, allow_create=False):
-        statements = [v for v in values if type(v) == Statement]
-        id_map = self.get_statement_id_map(statements)
+    def get_blob_id_map(self, blobs):
+        sha256s = [b.sha256 for b in blobs]
+        sel = select([blob_table.c.id, blob_table.c.sha256]).where(
+            blob_table.c.sha256.in_(sha256s)
+        )
+        result = self.db.execute(sel)
+        id_map = {u: i for i, u in result.fetchall()}
+        return id_map
 
+    def fill_ids(self, values, allow_create=False):
+        statements = list(filter(lambda v: type(v) == Statement, values))
+        self.fill_statement_ids(statements, allow_create)
+        blobs = list(filter(lambda v: type(v) == Blob, values))
+        self.fill_blob_ids(blobs, allow_create)
+
+    def fill_statement_ids(self, statements, allow_create=False):
+        id_map = self.get_statement_id_map(statements)
         missing = []
         for s in statements:
             if s.uuid in id_map:
@@ -255,12 +246,40 @@ class PGRepository:
             else:
                 missing.append(s)
 
-        if missing and allow_create:
+        if not missing:
+            return
+
+        if allow_create:
             ins = statement_table.insert().values([{"uuid": s.uuid} for s in missing])
             self.db.execute(ins)
             id_map = self.get_statement_id_map(missing)
             for s in missing:
                 s.id = id_map[s.uuid]
+        else:
+            for s in missing:
+                s.id = -1
+
+    def fill_blob_ids(self, blobs, allow_create=False):
+        id_map = self.get_blob_id_map(blobs)
+        missing = []
+        for b in blobs:
+            if b.sha256 in id_map:
+                b.id = id_map[b.sha256]
+            else:
+                missing.append(b)
+
+        if not missing:
+            return
+
+        if allow_create:
+            ins = blob_table.insert().values([{"sha256": b.sha256} for b in missing])
+            self.db.execute(ins)
+            id_map = self.get_blob_id_map(missing)
+            for b in missing:
+                b.id = id_map[b.sha256]
+        else:
+            for b in missing:
+                b.id = -1
 
     def get_target_table(self, target_name):
         if target_name == "blob":
