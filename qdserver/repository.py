@@ -60,30 +60,13 @@ class PGRepository:
         all_values = set(
             [v for statement in statements for v in (statement,) + statement.triple]
         )
-
-        all_uuids = set([v.uuid for v in all_values if type(v) == Statement])
-
-        all_blob_sums = set([v.sha256 for v in all_values if type(v) == Blob])
-        all_blobs = self.get_blobs_by_sums(all_blob_sums)
-        for b in all_blobs:
-            self.unique_add(b)
-
-        # create all Statements without values, ignoring duplicates
-        # (duplicates are OK if they are identical, we'll check this later)
-        values = [{"uuid": u} for u in all_uuids]
-        stmt = pg_insert(statement_table).values(values)
-        stmt = stmt.on_conflict_do_nothing(index_elements=["uuid"])
-        self.db.execute(stmt)
-
-        # retrieve all statements as they are now
-        all_statements = self.get_statements_by_uuids(all_uuids)
-        all_statements_by_uuid = {s.uuid: s for s in all_statements}
+        self.fill_ids(all_values, allow_create=True)
 
         # convert the supplied rows into values to be upserted
         insert_values = []
         all_column_names = set()
         for statement in statements:
-            self.unique_add(all_statements_by_uuid[statement.uuid])
+            statement = self.unique_add(statement)
             if statement.saved:
                 print("Exists!", statement)
                 continue
