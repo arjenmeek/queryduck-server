@@ -91,7 +91,10 @@ class PGQuery:
                                 )
                                 self.extra_columns.append(column_label)
                             else:
-                                self.wheres.append(column_compare(v, k, t.c))
+                                if c == 'id':
+                                    self.wheres.append(t.c.id==v.id)
+                                else:
+                                    self.wheres.append(column_compare(v, k, t.c))
             else:
                 if c in ("object_statement_id",):
                     if type(q) == File:
