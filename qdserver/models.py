@@ -61,7 +61,7 @@ Index(
 ),
 Index(
     "ix_statement_object_decimal",
-    statement_table.c.object_float,
+    statement_table.c.object_decimal,
     postgresql_where=statement_table.c.object_decimal != None,
 ),
 Index(
