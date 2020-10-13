@@ -85,8 +85,14 @@ class StatementController(BaseController):
         else:
             after = None
 
-        query = self._prepare_query(body["query"])
-        pgquery = PGQuery(self.repo, query, target, after=after)
+        pgquery = PGQuery(self.repo, target, after=after)
+
+        if type(body["query"]) == dict:
+            query = self._prepare_query(body["query"])
+            pgquery.apply_query(query)
+        elif type(body["query"]) == list:
+            pgquery.apply_query(query)
+            print("LIST")
         reference_statements, more = pgquery.get_results()
         statements = pgquery.get_result_values()
         files = self.repo.get_blob_files(

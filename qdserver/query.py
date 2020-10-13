@@ -4,6 +4,7 @@ from sqlalchemy import and_, or_
 from sqlalchemy.sql import select
 
 from queryduck.query import (
+    QueryElement,
     MatchObject,
     MatchSubject,
     MetaObject,
@@ -17,8 +18,10 @@ from queryduck.types import (
     Blob,
     Statement,
     File,
+    value_types_by_native,
 )
 
+from .errors import UserError
 from .models import statement_table, blob_table, file_table, volume_table
 from .utility import (
     process_db_row,
@@ -28,193 +31,156 @@ from .utility import (
 )
 
 
+class QueryEntity:
+    pass
+
+class MainEntity(QueryEntity):
+    id_name = "id"
+
+    def __init__(self):
+        self.target = None
+
+class JoinEntity(QueryEntity):
+
+    def __init__(self, predicate, target):
+        self.predicate = predicate
+        self.target = target
+
+class ObjJoinEntity(JoinEntity):
+    id_name = "object_statement_id"
+    lhs_name = "subject_id"
+
+class SubJoinEntity(JoinEntity):
+    id_name = "subject_id"
+    lhs_name = "object_statement_id"
+
+
+class FromClauseBuilder:
+
+    def __init__(self, target, entities):
+        self.target = target
+        self.entities = entities
+        self.fromclause = None
+        self.aliases = {}
+
+    def _join_entity(self, entity, alias):
+        """Join an entity to the fromclause"""
+        target = self.entities[entity.target]
+        target_alias = self.aliases[entity.target]
+        where = alias.c[entity.lhs_name] == target_alias.c[target.id_name]
+        if entity.predicate:
+            where = and_(where, alias.c.predicate_id == entity.predicate.id)
+        self.fromclause = self.fromclause.join(alias, where, isouter=True)
+
+    def _find_join_chain(self, key):
+        """Determine how much of the required join chain needs to be added"""
+        stack = []
+        nextkey = key
+        while not (nextkey is None or nextkey in self.aliases):
+            stack.append(nextkey)
+            nextkey = self.entities[nextkey].target
+        return reversed(stack)
+
+    def get_entity_alias(self, key):
+        """Create the required aliases and join them to the existing fromclause"""
+        chain = self._find_join_chain(key)
+
+        for join_key in chain:
+            alias = statement_table.alias(join_key)
+            self.aliases[join_key] = alias
+            entity = self.entities[join_key]
+            if entity.target is None:
+                self.fromclause = alias
+                continue
+            self._join_entity(entity, alias)
+
+        return self.aliases[key]
+
+
 class PGQuery:
-    def __init__(self, repo, query, target, after=None):
+    def __init__(self, repo, target, after=None):
         self.repo = repo
-        self.query = query
         self.target = target
         self.after = after
-        self.info_predicates = []
         self.db = self.repo.db
-        self.select_from = self.target
-        self.wheres = []
+
+        self.entities = {'main': MainEntity()}
+        self.filters = []
+        self.final_filters = []
+        self.sorts = []
+        self.prefers = []
+        self.fetches = []
+
         self.final_wheres = []
         self.extra_columns = []
         self.results = None
-        self.stack = []
-        self.additional_stack = []
-        self.additionals = []
-        self.prefer_by = []
         self.order_by = []
-        self.apply_query(query)
         self.limit = 5000
 
-    def _apply_join(self, key, rhs_column, v, t):
-        lhs_name, id_name = key.get_join_columns(v, t)
-        a = statement_table.alias()
-        self.select_from = self.select_from.join(
-            a,
-            and_(a.c[lhs_name] == rhs_column, a.c.predicate_id == key.value.id),
-            isouter=True,
-        )
-        self.stack.append((v, a, id_name))
+    def _get_entity_key(self, prefix=None):
+        if prefix is None:
+            prefix = 'statement'
+        for i in range(1000):
+            key = f"{prefix}_{i}"
+            if not key in self.entities:
+                break
+        else:
+            raise UserError("Too many entities")
+        return key
 
     def apply_query(self, query):
-        self.stack.append((query, self.target, "id"))
-        while self.stack:
-            q, t, c = self.stack.pop()
-            # q = subquery
-            # t = entity against which this is applied
-            # c = id column name to match further subqueries against
-            #     ( = the column the next entity represents)
+        stack = [(query, 'main')]
+        while stack:
+            q, e = stack.pop()
             if type(q) == dict:
                 for k, v in q.items():
-                    if type(k) in (MatchObject, MatchSubject, MetaObject, MetaSubject):
-                        rhs_column = t.c.id if type(k) == MetaObject else t.c[c]
-                        self._apply_join(k, rhs_column, v, t)
-                    elif type(k) in (FetchObject, FetchSubject):
-                        pass
+                    if isinstance(k, QueryElement):
+                        ekey = self._get_entity_key()
+                        target_object = type(k) in (MatchObject, FetchObject)
+                        self.fetches.append((ekey, target_object, k.value))
+                        cls = ObjJoinEntity if target_object else SubJoinEntity
+                        self.entities[ekey] = cls(k.value, e)
+                        if type(v) == dict:
+                            stack.append((v, ekey))
+                    elif k in ("sort", "sort+"):
+                        self.sorts.append((e, v, True))
+                    elif k in ("prefer", "prefer+"):
+                        self.prefers.append((e, v, True))
+                    elif k.endswith("."):
+                        self.final_filters.append((e, k[:-1], v))
                     else:
-                        if k == "sort":
-                            self.order_by.append(t.c["object_" + v].label(None))
-                        elif k == "prefer+":
-                            self.prefer_by.append(t.c["object_" + v].desc())
-                        else:
-                            if k.endswith("."):
-                                (
-                                    column_label,
-                                    op_method,
-                                    db_value,
-                                ) = final_column_compare(v, k[:-1], t.c)
-                                self.final_wheres.append(
-                                    (column_label, op_method, db_value)
-                                )
-                                self.extra_columns.append(column_label)
-                            else:
-                                if c == 'id':
-                                    self.wheres.append(t.c.id==v.id)
-                                else:
-                                    self.wheres.append(column_compare(v, k, t.c))
+                        self.filters.append((e, k, v))
             else:
-                if c in ("object_statement_id",):
-                    if type(q) == File:
-                        q = self.repo.get_file_blob(q)
-                    self.wheres.append(column_compare(q, "eq", t.c))
-                else:
-                    self.wheres.append(
-                        t.c[c] == (q.id if type(q) in (Statement,) else q)
-                    )
-
-    def apply_additonal_query(self):
-        main_ids = [s.id for s in self.results]
-        self.additional_stack.append((self.query, main_ids, self.target))
-        while self.additional_stack:
-            q, subq, target = self.additional_stack.pop()
-            # q = subquery
-            object_predicates = []
-            subject_predicates = []
-            if type(q) == dict:
-                for k, v in q.items():
-                    if type(k) in (MatchObject, FetchObject):
-                        object_predicates.append(k.value)
-                        if type(v) == dict:
-                            new_subq = select(
-                                [statement_table.c.object_statement_id]
-                            ).where(
-                                and_(
-                                    statement_table.c.subject_id.in_(subq),
-                                    statement_table.c.predicate_id == k.value.id,
-                                )
-                            )
-                            self.additional_stack.append((v, new_subq, statement_table))
-                    elif type(k) in (MatchSubject, FetchSubject):
-                        subject_predicates.append(k.value)
-                        if type(v) == dict:
-                            if target == blob_table:
-                                new_subq = select([statement_table.c.subject_id]).where(
-                                    and_(
-                                        statement_table.c.object_blob_id.in_(subq),
-                                        statement_table.c.object_blob_id != None,
-                                        statement_table.c.predicate_id == k.value.id,
-                                    )
-                                )
-                                self.additional_stack.append(
-                                    (v, new_subq, statement_table)
-                                )
-                            else:
-                                new_subq = select([statement_table.c.subject_id]).where(
-                                    and_(
-                                        statement_table.c.object_statement_id.in_(subq),
-                                        statement_table.c.predicate_id == k.value.id,
-                                    )
-                                )
-                                self.additional_stack.append(
-                                    (v, new_subq, statement_table)
-                                )
-            if len(object_predicates):
-                sbj = select([statement_table.c.id]).where(
-                    statement_table.c.subject_id.in_(subq)
-                )
-
-                if not None in object_predicates:
-                    pred_ids = [s.id for s in object_predicates]
-                    sbj = sbj.where(statement_table.c.predicate_id.in_(pred_ids))
-                self.additionals.append(sbj)
-
-            if len(subject_predicates):
-                if target == blob_table:
-                    obj = select([statement_table.c.id]).where(
-                        and_(
-                            statement_table.c.object_blob_id.in_(subq),
-                            statement_table.c.object_blob_id != None,
-                        )
-                    )
-                else:
-                    obj = select([statement_table.c.id]).where(
-                        statement_table.c.object_statement_id.in_(subq)
-                    )
-
-                if not None in subject_predicates:
-                    pred_ids = [s.id for s in subject_predicates]
-                    obj = obj.where(statement_table.c.predicate_id.in_(pred_ids))
-                self.additionals.append(obj)
+                self.filters.append((e, "eq", q))
+        print("ENTITIES", self.entities)
+        print("FILTERS", self.filters)
+        print("FETCHES", self.fetches)
 
     def get_results(self):
-        if self.target == blob_table:
-            return self._get_blob_results()
-        elif self.target == statement_table:
-            return self._get_statement_results()
+        #joins = {"main": self.target}
 
-    def _get_blob_results(self):
-        s = select([self.target.c.id, blob_table.c.sha256]).select_from(
-            self.select_from
-        )
-        s = (
-            s.where(and_(*self.wheres))
-            .distinct(self.target.c.sha256)
-            .limit(self.limit + 1)
-        )
-        if self.after is not None:
-            s = s.where(self.target.c.sha256 > self.after.sha256)
-        s = s.order_by(self.target.c.sha256)
-        # print("DBQUERY", s.compile(dialect=self.db.dialect, compile_kwargs={"literal_binds": True}))
-        resultset = self.db.execute(s)
-        self.results = [
-            Blob(sha256=r_sha256, id_=r_id)
-            for r_id, r_sha256 in islice(resultset, self.limit)
-        ]
-        more = resultset.rowcount > self.limit
-        return self.results, more
+        builder = FromClauseBuilder(self.target, self.entities)
+        #select_from = self.target
+        wheres = []
 
-    def _get_statement_results(self):
+        for entity_key, op, value in self.filters:
+            #joins, select_from = self._add_entity_chain(joins, select_from, entity_key)
+            #a = joins[entity_key]
+            a = builder.get_entity_alias(entity_key)
+            wheres.append(column_compare(value, op, a.c))
+
+        main = builder.get_entity_alias("main")
+
         sub = select(
-            [self.target.c.id, self.target.c.uuid] + self.order_by + self.extra_columns
-        ).select_from(self.select_from)
+            [main.c.id, main.c.uuid] + self.order_by + self.extra_columns
+        ).select_from(builder.fromclause)
         sub = (
-            sub.where(and_(*self.wheres))
-            .distinct(self.target.c.uuid)
-            .order_by(self.target.c.uuid, *self.prefer_by)
+            sub.where(and_(*wheres))
+#            .distinct(self.target.c.uuid)
+#            .order_by(self.target.c.uuid, *self.prefer_by)
         )
+        print("SUB", builder.fromclause)
+        print("--------")
         if self.after is not None:
             sub = sub.where(self.target.c.uuid > self.after.uuid)
         if self.order_by or self.final_wheres:
@@ -246,40 +212,31 @@ class PGQuery:
         return self.results, more
 
     def get_result_values(self):
-        if self.target == blob_table:
-            statements = self._get_blob_values()
-        else:
-            statements = self._get_statement_values()
-        return statements
-
-    def _get_blob_values(self):
-        self.apply_additonal_query()
-        blob_ids = [s.id for s in self.results]
-        ids = []
-        # [print("ADDITIONAL", a.compile(dialect=self.db.dialect, compile_kwargs={"literal_binds": True})) for a in self.additionals]
-
-        for additional in self.additionals:
-            res = self.db.execute(additional)
-            ids += [i[0] for i in res.fetchall()]
-        allids = set(ids)
-        s, entities = self.repo.select_full_statements(statement_table)
-        where = statement_table.c.id.in_(allids)
-        s = s.where(where).distinct(statement_table.c.id)
-        # print("ADBQUERY", s.compile(dialect=self.db.dialect, compile_kwargs={"literal_binds": True}))
-
-        results = self.db.execute(s)
-        statements = self.repo.process_result_statements(results, entities)
-        # print("RETURNING", statements)
-        return statements
-
-    def _get_statement_values(self):
-        self.apply_additonal_query()
         main_ids = [s.id for s in self.results]
         ids = main_ids[:]
-        # [print("ADDITIONAL", a.compile(dialect=self.db.dialect, compile_kwargs={"literal_binds": True})) for a in self.additionals]
 
-        for additional in self.additionals:
-            res = self.db.execute(additional)
+        fetches_by_entity = {}
+        for entity, target_object, predicate in self.fetches:
+            key = (entity, target_object)
+            print("FETCH", entity, target_object, predicate)
+            if predicate is None:
+                fetches_by_entity[key] = None
+                continue
+            if not key in fetches_by_entity:
+                fetches_by_entity[key] = set()
+            if fetches_by_entity[key] is None:
+                continue
+            fetches_by_entity[key].add(predicate.id)
+
+        for (entity, target_object), predicate_ids in fetches_by_entity.items():
+            builder = FromClauseBuilder(self.target, self.entities)
+            a = builder.get_entity_alias(entity)
+            main = builder.get_entity_alias("main")
+            sel = select([a.c.id]).select_from(builder.fromclause).where(main.c.id.in_(main_ids))
+            if predicate_ids is not None:
+                sel = sel.where(a.c.predicate_id.in_(predicate_ids))
+            print("FETCH SEL", sel)
+            res = self.db.execute(sel)
             ids += [i[0] for i in res.fetchall()]
 
         allids = set(ids)
