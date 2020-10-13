@@ -141,7 +141,7 @@ class StatementController(BaseController):
         statements = []
         for row in serialized_rows:
             if row[0] is None:
-                statement = Statement(uuid_=uuid4())
+                statement = Statement(handle=uuid4())
                 self.repo.unique_add(statement)
             else:
                 statement = self.unique_deserialize(row[0])

@@ -53,7 +53,7 @@ class StorageController(BaseController):
 
         j = file_table.join(blob_table, file_table.c.blob_id == blob_table.c.id)
         s = (
-            select([file_table, blob_table.c.sha256])
+            select([file_table, blob_table.c.handle])
             .select_from(j)
             .where(file_table.c.volume_id == volume["id"])
         )
@@ -87,7 +87,7 @@ class StorageController(BaseController):
                 "size": r[file_table.c.size],
                 "mtime": r[file_table.c.mtime].isoformat(),
                 "lastverify": r[file_table.c.lastverify].isoformat(),
-                "sha256": base64.urlsafe_b64encode(r[blob_table.c.sha256]).decode(
+                "handle": base64.urlsafe_b64encode(r[blob_table.c.handle]).decode(
                     "utf-8"
                 ),
             }
@@ -101,23 +101,23 @@ class StorageController(BaseController):
 
     def _process_file_blobs(self, files):
         """Determines which required blobs don't exist yet, and construct them."""
-        file_checksums = {f["sha256"] for f in files}
-        s = select([blob_table.c.sha256]).where(blob_table.c.sha256.in_(file_checksums))
+        file_checksums = {f["handle"] for f in files}
+        s = select([blob_table.c.handle]).where(blob_table.c.handle.in_(file_checksums))
         db_checksums = {r for (r,) in self.db.execute(s)}
         new_checksums = file_checksums - db_checksums
         return new_checksums
 
     def _process_files(self, files):
-        file_checksums = {f["sha256"] for f in files}
-        s = select([blob_table.c.id, blob_table.c.sha256]).where(
-            blob_table.c.sha256.in_(file_checksums)
+        file_checksums = {f["handle"] for f in files}
+        s = select([blob_table.c.id, blob_table.c.handle]).where(
+            blob_table.c.handle.in_(file_checksums)
         )
         blob_ids = {
             blob_checksum: blob_id for blob_id, blob_checksum in self.db.execute(s)
         }
         for f in files:
-            f["blob_id"] = blob_ids[f["sha256"]]
-            del f["sha256"]
+            f["blob_id"] = blob_ids[f["handle"]]
+            del f["handle"]
         return files
 
     @view_config(route_name="mutate_volume_files", renderer="json")
@@ -131,7 +131,7 @@ class StorageController(BaseController):
             {
                 "volume_id": volume.id,
                 "path": os.fsencode(path),
-                "sha256": base64.urlsafe_b64decode(rf["sha256"]),
+                "handle": base64.urlsafe_b64decode(rf["handle"]),
                 "mtime": datetime.datetime.fromisoformat(rf["mtime"]),
                 "lastverify": datetime.datetime.fromisoformat(rf["lastverify"]),
                 "size": rf["size"],
@@ -145,7 +145,7 @@ class StorageController(BaseController):
         new_checksums = self._process_file_blobs(files)
         if len(new_checksums):
             self.db.execute(
-                blob_table.insert().values([{"sha256": c} for c in new_checksums])
+                blob_table.insert().values([{"handle": c} for c in new_checksums])
             )
 
         delete_paths = [

@@ -19,8 +19,8 @@ class PGRepository:
 
     def unique_add(self, new_value):
         if type(new_value) == Statement:
-            if new_value.uuid in self.statement_map:
-                value = self.statement_map[new_value.uuid]
+            if new_value.handle in self.statement_map:
+                value = self.statement_map[new_value.handle]
                 if new_value.triple is not None and value.triple is None:
                     value.triple = new_value.triple
                 if new_value.id is not None and value.id is None:
@@ -29,26 +29,26 @@ class PGRepository:
                     value.saved = True
             else:
                 value = new_value
-                self.statement_map[value.uuid] = value
+                self.statement_map[value.handle] = value
         elif type(new_value) == Blob:
-            if new_value.sha256 in self.blob_map:
-                value = self.blob_map[new_value.sha256]
+            if new_value.handle in self.blob_map:
+                value = self.blob_map[new_value.handle]
                 if new_value.id is not None and value.id is None:
                     value.id = new_value.id
             else:
                 value = new_value
-                self.blob_map[value.sha256] = value
+                self.blob_map[value.handle] = value
         else:
             # simple scalar value, doesn't need to be uniqueified
             value = new_value
 
         return value
 
-    def create_statement(self, uuid_=None, **kwargs):
+    def create_statement(self, handle=None, **kwargs):
         """Create a Statement with specified values. None values are changed to be self referential."""
-        if uuid_ is None:
-            uuid_ = uuid4()
-        insert = statement_table.insert().values(uuid=uuid_)
+        if handle is None:
+            handle = uuid4()
+        insert = statement_table.insert().values(handle=handle)
         (insert_id,) = self.db.execute(insert).inserted_primary_key
         values = {k: (insert_id if v is None else v) for k, v in kwargs.items()}
         where = statement_table.c.id == insert_id
@@ -72,7 +72,7 @@ class PGRepository:
                 continue
             value, column_name = prepare_for_db(statement.triple[2])
             insert_value = {
-                "uuid": statement.uuid,
+                "handle": statement.handle,
                 "subject_id": statement.triple[0].id,
                 "predicate_id": statement.triple[1].id,
                 column_name: value,
@@ -90,10 +90,10 @@ class PGRepository:
         if insert_values:
             ins = pg_insert(statement_table).values(insert_values)
             on_conflict_set = {
-                cn: getattr(ins.excluded, cn) for cn in all_column_names if cn != "uuid"
+                cn: getattr(ins.excluded, cn) for cn in all_column_names if cn != "handle"
             }
             upd = ins.on_conflict_do_update(
-                index_elements=["uuid"], set_=on_conflict_set
+                index_elements=["handle"], set_=on_conflict_set
             )
             self.db.execute(upd)
 
@@ -101,23 +101,23 @@ class PGRepository:
 
     def get_all_statements(self):
         s, entities = self.select_full_statements(statement_table, blob_files=False)
-        s = s.order_by(statement_table.c.uuid)
+        s = s.order_by(statement_table.c.handle)
         results = self.db.execute(s)
         quads = self.process_result_quads(results, entities)
         return quads
 
-    def get_statements_by_uuids(self, uuids):
+    def get_statements_by_handles(self, handles):
         s, entities = self.select_full_statements(statement_table, blob_files=False)
-        s = s.where(statement_table.c.uuid.in_(uuids))
+        s = s.where(statement_table.c.handle.in_(handles))
         results = self.db.execute(s)
         statements = self.process_result_statements(results, entities)
         return statements
 
     def get_blobs_by_sums(self, sums):
         s, entities = self.select_full_statements(statement_table, blob_files=False)
-        s = select([blob_table]).where(blob_table.c.sha256.in_(sums))
+        s = select([blob_table]).where(blob_table.c.handle.in_(sums))
         results = self.db.execute(s)
-        blobs = [Blob(sha256=r["sha256"], id_=r["id"]) for r in results]
+        blobs = [Blob(handle=r["handle"], id_=r["id"]) for r in results]
         return blobs
 
     @staticmethod
@@ -145,10 +145,10 @@ class PGRepository:
         )
         columns = [
             main,
-            su.c.uuid,
-            pr.c.uuid,
-            ob.c.uuid,
-            blob_table.c.sha256,
+            su.c.handle,
+            pr.c.handle,
+            ob.c.handle,
+            blob_table.c.handle,
         ]
 
         s = select(columns).select_from(select_from)
@@ -158,10 +158,10 @@ class PGRepository:
     def process_result_rows(results, entities):
         processed = []
         for row in results:
-            statement = self.unique_add(Statement(uuid_=row[entities["main"].c.uuid]))
+            statement = self.unique_add(Statement(handle=row[entities["main"].c.handle]))
             statement.triple = (
-                self.unique_add(Statement(uuid_=row[entities["su"].c.uuid])),
-                self.unique_add(Statement(uuid_=row[entities["pr"].c.uuid])),
+                self.unique_add(Statement(handle=row[entities["su"].c.handle])),
+                self.unique_add(Statement(handle=row[entities["pr"].c.handle])),
                 self.unique_add(process_db_row(row, entities["main"].c, entities)[0]),
             )
         return processed
@@ -171,9 +171,9 @@ class PGRepository:
         processed = []
         for row in results:
             elements = (
-                Statement(uuid_=row[entities["main"].c.uuid]),
-                Statement(uuid_=row[entities["su"].c.uuid]),
-                Statement(uuid_=row[entities["pr"].c.uuid]),
+                Statement(handle=row[entities["main"].c.handle]),
+                Statement(handle=row[entities["su"].c.handle]),
+                Statement(handle=row[entities["pr"].c.handle]),
                 process_db_row(row, entities["main"].c, entities)[0],
             )
             processed.append(elements)
@@ -183,12 +183,12 @@ class PGRepository:
         processed = []
         for row in results:
             statement = Statement(
-                uuid_=row[entities["main"].c.uuid], id_=row[entities["main"].c.id]
+                handle=row[entities["main"].c.handle], id_=row[entities["main"].c.id]
             )
-            if row[entities["su"].c.uuid]:
+            if row[entities["su"].c.handle]:
                 statement.triple = (
-                    Statement(uuid_=row[entities["su"].c.uuid]),
-                    Statement(uuid_=row[entities["pr"].c.uuid]),
+                    Statement(handle=row[entities["su"].c.handle]),
+                    Statement(handle=row[entities["pr"].c.handle]),
                     process_db_row(row, entities["main"].c, entities)[0],
                 )
                 statement.saved = True
@@ -197,18 +197,19 @@ class PGRepository:
         return processed
 
     def get_statement_id_map(self, statements):
-        uuids = [s.uuid for s in statements]
-        sel = select([statement_table.c.id, statement_table.c.uuid]).where(
-            statement_table.c.uuid.in_(uuids)
+        print(statements)
+        handles = [s.handle for s in statements]
+        sel = select([statement_table.c.id, statement_table.c.handle]).where(
+            statement_table.c.handle.in_(handles)
         )
         result = self.db.execute(sel)
         id_map = {u: i for i, u in result.fetchall()}
         return id_map
 
     def get_blob_id_map(self, blobs):
-        sha256s = [b.sha256 for b in blobs]
-        sel = select([blob_table.c.id, blob_table.c.sha256]).where(
-            blob_table.c.sha256.in_(sha256s)
+        handles = [b.handle for b in blobs]
+        sel = select([blob_table.c.id, blob_table.c.handle]).where(
+            blob_table.c.handle.in_(handles)
         )
         result = self.db.execute(sel)
         id_map = {u: i for i, u in result.fetchall()}
@@ -224,8 +225,8 @@ class PGRepository:
         id_map = self.get_statement_id_map(statements)
         missing = []
         for s in statements:
-            if s.uuid in id_map:
-                s.id = id_map[s.uuid]
+            if s.handle in id_map:
+                s.id = id_map[s.handle]
             else:
                 missing.append(s)
 
@@ -233,11 +234,11 @@ class PGRepository:
             return
 
         if allow_create:
-            ins = statement_table.insert().values([{"uuid": s.uuid} for s in missing])
+            ins = statement_table.insert().values([{"handle": s.handle} for s in missing])
             self.db.execute(ins)
             id_map = self.get_statement_id_map(missing)
             for s in missing:
-                s.id = id_map[s.uuid]
+                s.id = id_map[s.handle]
         else:
             for s in missing:
                 s.id = -1
@@ -246,8 +247,8 @@ class PGRepository:
         id_map = self.get_blob_id_map(blobs)
         missing = []
         for b in blobs:
-            if b.sha256 in id_map:
-                b.id = id_map[b.sha256]
+            if b.handle in id_map:
+                b.id = id_map[b.handle]
             else:
                 missing.append(b)
 
@@ -255,11 +256,11 @@ class PGRepository:
             return
 
         if allow_create:
-            ins = blob_table.insert().values([{"sha256": b.sha256} for b in missing])
+            ins = blob_table.insert().values([{"handle": b.handle} for b in missing])
             self.db.execute(ins)
             id_map = self.get_blob_id_map(missing)
             for b in missing:
-                b.id = id_map[b.sha256]
+                b.id = id_map[b.handle]
         else:
             for b in missing:
                 b.id = -1
@@ -313,7 +314,7 @@ class PGRepository:
             select(
                 [
                     blob_table.c.id,
-                    blob_table.c.sha256,
+                    blob_table.c.handle,
                 ]
             )
             .select_from(select_from)
@@ -325,6 +326,6 @@ class PGRepository:
             )
         )
         res = self.db.execute(sel)
-        id_, sha256 = res.fetchone()
-        blob = Blob(sha256=sha256, id_=id_)
+        id_, handle = res.fetchone()
+        blob = Blob(handle=handle, id_=id_)
         return blob

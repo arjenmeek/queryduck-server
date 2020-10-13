@@ -16,11 +16,11 @@ def process_db_row(db_row, db_columns, db_entities):
         raise QDValueError("Cannot process DB row {}".format(db_row))
 
     if vtype == "s":
-        uuid_ = db_row[db_entities["s"].c.uuid]
-        v = Statement(uuid_=uuid_, id_=db_value)
+        handle = db_row[db_entities["s"].c.handle]
+        v = Statement(handle=handle, id_=db_value)
     elif vtype == "blob":
-        sha256 = db_row[db_entities["blob"].c.sha256]
-        v = Blob(sha256=sha256, id_=db_value)
+        handle = db_row[db_entities["blob"].c.handle]
+        v = Blob(handle=handle, id_=db_value)
     else:
         v = db_value
 

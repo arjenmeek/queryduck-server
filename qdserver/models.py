@@ -32,7 +32,7 @@ statement_table = Table(
     "statement",
     meta,
     Column("id", Integer, primary_key=True),
-    Column("uuid", UUID(as_uuid=True), index=True, unique=True, nullable=False),
+    Column("handle", UUID(as_uuid=True), index=True, unique=True, nullable=False),
     Column("subject_id", Integer, ForeignKey("statement.id"), index=True),
     Column("predicate_id", Integer, ForeignKey("statement.id"), index=True),
     Column("object_statement_id", Integer, ForeignKey("statement.id")),
@@ -98,7 +98,7 @@ blob_table = Table(
     "blob",
     meta,
     Column("id", Integer, primary_key=True),
-    Column("sha256", BYTEA, index=True, unique=True),
+    Column("handle", BYTEA, index=True, unique=True),
 )
 
 file_table = Table(

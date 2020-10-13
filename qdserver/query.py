@@ -172,17 +172,17 @@ class PGQuery:
         main = builder.get_entity_alias("main")
 
         sub = select(
-            [main.c.id, main.c.uuid] + self.order_by + self.extra_columns
+            [main.c.id, main.c.handle] + self.order_by + self.extra_columns
         ).select_from(builder.fromclause)
         sub = (
             sub.where(and_(*wheres))
-#            .distinct(self.target.c.uuid)
-#            .order_by(self.target.c.uuid, *self.prefer_by)
+#            .distinct(self.target.c.handle)
+#            .order_by(self.target.c.handle, *self.prefer_by)
         )
         print("SUB", builder.fromclause)
         print("--------")
         if self.after is not None:
-            sub = sub.where(self.target.c.uuid > self.after.uuid)
+            sub = sub.where(self.target.c.handle > self.after.handle)
         if self.order_by or self.final_wheres:
             sub = sub.alias("mysubquery")
             s = select([sub]).select_from(sub)
@@ -193,7 +193,7 @@ class PGQuery:
             if wheres:
                 s = s.where(and_(*wheres))
             if self.order_by is None:
-                s = s.order_by(self.target.c.uuid)
+                s = s.order_by(self.target.c.handle)
             else:
                 order_by = [sub.c[e.name] for e in self.order_by]
                 s = s.order_by(*order_by)
@@ -206,7 +206,7 @@ class PGQuery:
         )
         resultset = self.db.execute(s)
         self.results = [
-            Statement(uuid_=row[1], id_=row[0]) for row in islice(resultset, self.limit)
+            Statement(handle=row[1], id_=row[0]) for row in islice(resultset, self.limit)
         ]
         more = resultset.rowcount > self.limit
         return self.results, more
