@@ -46,32 +46,32 @@ Index(
     "ix_statement_object_statement_id",
     statement_table.c.object_statement_id,
     postgresql_where=statement_table.c.object_statement_id != None,
-),
+)
 Index(
     "ix_statement_object_blob_id",
     statement_table.c.object_blob_id,
     postgresql_where=statement_table.c.object_blob_id != None,
-),
+)
 Index(
     "ix_statement_object_integer",
     statement_table.c.object_integer,
     postgresql_where=statement_table.c.object_integer != None,
-),
+)
 Index(
     "ix_statement_object_decimal",
     statement_table.c.object_decimal,
     postgresql_where=statement_table.c.object_decimal != None,
-),
+)
 Index(
     "ix_statement_object_string",
     statement_table.c.object_string,
     postgresql_where=statement_table.c.object_string != None,
-),
+)
 Index(
     "ix_statement_object_boolean",
     statement_table.c.object_boolean,
     postgresql_where=statement_table.c.object_boolean != None,
-),
+)
 Index(
     "ix_statement_object_datetime",
     statement_table.c.object_datetime,
