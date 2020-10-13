@@ -6,7 +6,6 @@ from sqlalchemy import (
     BigInteger,
     Boolean,
     DateTime,
-    Float,
     ForeignKey,
     Index,
     Integer,
@@ -39,7 +38,6 @@ statement_table = Table(
     Column("object_blob_id", Integer, ForeignKey("blob.id")),
     Column("object_integer", BigInteger),
     Column("object_decimal", Numeric),
-    Column("object_float", Float),
     Column("object_string", String),
     Column("object_boolean", Boolean),
     Column("object_datetime", DateTime),
@@ -63,11 +61,6 @@ Index(
     "ix_statement_object_decimal",
     statement_table.c.object_decimal,
     postgresql_where=statement_table.c.object_decimal != None,
-),
-Index(
-    "ix_statement_object_float",
-    statement_table.c.object_float,
-    postgresql_where=statement_table.c.object_float != None,
 ),
 Index(
     "ix_statement_object_string",
