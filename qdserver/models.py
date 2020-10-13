@@ -41,6 +41,7 @@ statement_table = Table(
     Column("object_string", String),
     Column("object_boolean", Boolean),
     Column("object_datetime", DateTime),
+    Column("object_bytes", BYTEA),
 )
 Index(
     "ix_statement_object_statement_id",
@@ -76,6 +77,11 @@ Index(
     "ix_statement_object_datetime",
     statement_table.c.object_datetime,
     postgresql_where=statement_table.c.object_datetime != None,
+)
+Index(
+    "ix_statement_object_bytes",
+    statement_table.c.object_bytes,
+    postgresql_where=statement_table.c.object_bytes != None,
 )
 
 
