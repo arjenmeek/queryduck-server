@@ -91,7 +91,7 @@ blob_table = Table(
     "blob",
     meta,
     Column("id", Integer, primary_key=True),
-    Column("handle", BYTEA, index=True, unique=True),
+    Column("handle", BYTEA, index=True, unique=True, nullable=False),
 )
 
 file_table = Table(
