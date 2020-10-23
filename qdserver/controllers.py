@@ -4,12 +4,20 @@ from uuid import uuid4
 
 from pyramid.view import view_config
 
+from queryduck.query import (
+    QDQuery,
+    Main,
+    ObjectFor,
+    element_classes,
+    JoinEntity,
+    Filter,
+)
 from queryduck.types import Statement, Blob
 from queryduck.serialization import serialize, deserialize
 from queryduck.utility import transform_doc
 
 from .repository import PGRepository
-from .query import PGQuery
+from .query import PGQuery, FromClauseBuilder
 
 
 class BaseController(object):
@@ -71,14 +79,51 @@ class StatementController(BaseController):
 
         return result
 
-    @view_config(route_name="query_statements", renderer="json")
-    def query_statements(self):
+    def deserialize_query(self, params, target_name):
+        target = Blob if target_name == "blob" else Statement
+        q = QDQuery(target)
+        q.join(Main())
+        for k, v in params:
+            print("PARAM", k, v)
+            cls = element_classes[tuple(k.split("."))]
+            args = v.split(",", cls.num_args)
+            if issubclass(cls, JoinEntity):
+                target_key, key, predicate_str = args
+                predicate = self.unique_deserialize(predicate_str)
+                j = cls(predicate, q.joins[target_key], key)
+                q.join(j)
+                print(j)
+            elif issubclass(cls, Filter):
+                lhs_str, rhs_str = args
+                _, lhs_key = lhs_str.split(":", 1)
+                lhs = q.joins[lhs_key]
+                rhs = self.unique_deserialize(rhs_str)
+                f = cls(lhs, rhs)
+                q.filter(f)
+                print(lhs, rhs)
+        return q
+
+    @view_config(route_name="get_query", renderer="json")
+    def get_query(self):
+        # target = self.repo.get_target_table(self.request.matchdict["target"])
+        query = self.deserialize_query(
+            self.request.GET.items(),
+            self.request.matchdict["target"],
+        )
+        values, more = self.repo.get_results(query)
+        result = {
+            "references": [serialize(v) for v in values],
+            "statements": {},
+            "files": {},
+            "more": more,
+        }
+        return result
+
+    @view_config(route_name="query", renderer="json")
+    def query(self):
+        target = self.repo.get_target_table(self.request.matchdict["target"])
         print("QUERY BODY:", self.request.body)
         body = self.request.json_body
-        if "target" in body:
-            target = self.repo.get_target_table(body["target"])
-        else:
-            target = self.repo.get_target_table("statement")
 
         if "after" in body and body["after"] is not None:
             after = self.unique_deserialize(body["after"])

@@ -72,8 +72,9 @@ def main(settings):
 
     config.add_static_view(name="static", path="../../webclient")
 
+    config.add_route("query", "/{target}/query", request_method="POST")
+    config.add_route("get_query", "/{target}/query", request_method="GET")
     config.add_route("get_statements", "/statements", request_method="GET")
-    config.add_route("query_statements", "/statements/query", request_method="POST")
     config.add_route(
         "submit_transaction", "/statements/transaction", request_method="POST"
     )
