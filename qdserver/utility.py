@@ -2,6 +2,33 @@ from queryduck.serialization import get_native_vtype
 from queryduck.types import Statement, Blob, value_types, value_comparison_methods
 
 
+class EntitySet:
+    def __init__(self, aliases):
+        self.aliases = aliases
+        self.fromclause = aliases["main"]
+
+    def add_entity(self, key, entity):
+        target = entity.target
+        alias = self.aliases["main"].alias(key)
+        self.aliases[key] = alias
+
+        target_alias = self.aliases[target.key]
+        if entity.value_component == Component.OBJECT:
+            lhs = alias.c.object_statement_id
+        elif entity.value_component == Component.SUBJECT:
+            lhs = alias.c.subject_id
+
+        if entity.meta or target.value_component == Component.SELF:
+            rhs = target_alias.c.id
+        elif target.value_component == Component.OBJECT:
+            rhs = target_alias.c.object_statement_id
+        elif target.value_component == Component.SUBJECT:
+            rhs = target_alias.c.subject_id
+
+        where = and_(lhs == rhs, alias.c.predicate_id == entity.predicate.id)
+        self.fromclause = self.fromclause.join(alias, where, isouter=True)
+
+
 def process_db_row(db_row, db_columns, db_entities):
     for try_vtype, options in value_types.items():
         if not "column_name" in options or not options["column_name"] in db_columns:

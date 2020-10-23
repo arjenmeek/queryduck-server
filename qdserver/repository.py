@@ -1,4 +1,5 @@
 from collections import defaultdict
+from itertools import islice
 
 from sqlalchemy import and_, or_
 from sqlalchemy.sql import select
@@ -7,7 +8,12 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from queryduck.types import Blob, Statement, File
 
 from .models import statement_table, blob_table, file_table, volume_table
-from .utility import process_db_row, column_compare, prepare_for_db
+from .utility import (
+    EntitySet,
+    process_db_row,
+    column_compare,
+    prepare_for_db,
+)
 
 
 class PGRepository:
@@ -335,3 +341,47 @@ class PGRepository:
         id_, handle = res.fetchone()
         blob = Blob(handle=handle, id_=id_)
         return blob
+
+    def _show_db_query(self, db_query):
+        try:
+            compiled = db_query.compile(
+                dialect=self.db.dialect, compile_kwargs={"literal_binds": True}
+            )
+            print("DBQUERY", compiled)
+        except:
+            compiled = db_query.compile(dialect=self.db.dialect)
+            print("DBQUERY", compiled)
+            print("PARAMS", compiled.params)
+
+    def _query_to_select(self, query):
+        self.fill_ids(query.seen_values)
+        table = blob_table if query.target == Blob else statement_table
+        es = EntitySet({"main": table.alias("main")})
+
+        for k, v in query.joins.items():
+            if k == "main":
+                continue
+            es.add_entity(k, v)
+
+        wheres = []
+        for f in query.filters:
+            lhs = es.aliases[f.lhs.key]
+            wheres.append(lhs.c.object_statement_id == f.rhs.id)
+
+        inner = select(
+            [es.aliases["main"].c.id, es.aliases["main"].c.handle]
+        ).select_from(es.fromclause)
+        inner = inner.where(and_(*wheres))
+        outer = inner.limit(query.limit + 1)
+        return outer
+
+    def get_results(self, query):
+        db_select = self._query_to_select(query)
+        self._show_db_query(db_select)
+        resultset = self.db.execute(db_select)
+        results = [
+            query.target(handle=row[1], id_=row[0])
+            for row in islice(resultset, query.limit)
+        ]
+        more = resultset.rowcount > query.limit
+        return results, more
