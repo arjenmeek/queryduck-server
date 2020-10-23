@@ -90,7 +90,9 @@ class PGRepository:
         if insert_values:
             ins = pg_insert(statement_table).values(insert_values)
             on_conflict_set = {
-                cn: getattr(ins.excluded, cn) for cn in all_column_names if cn != "handle"
+                cn: getattr(ins.excluded, cn)
+                for cn in all_column_names
+                if cn != "handle"
             }
             upd = ins.on_conflict_do_update(
                 index_elements=["handle"], set_=on_conflict_set
@@ -158,7 +160,9 @@ class PGRepository:
     def process_result_rows(results, entities):
         processed = []
         for row in results:
-            statement = self.unique_add(Statement(handle=row[entities["main"].c.handle]))
+            statement = self.unique_add(
+                Statement(handle=row[entities["main"].c.handle])
+            )
             statement.triple = (
                 self.unique_add(Statement(handle=row[entities["su"].c.handle])),
                 self.unique_add(Statement(handle=row[entities["pr"].c.handle])),
@@ -234,7 +238,9 @@ class PGRepository:
             return
 
         if allow_create:
-            ins = statement_table.insert().values([{"handle": s.handle} for s in missing])
+            ins = statement_table.insert().values(
+                [{"handle": s.handle} for s in missing]
+            )
             self.db.execute(ins)
             id_map = self.get_statement_id_map(missing)
             for s in missing:
