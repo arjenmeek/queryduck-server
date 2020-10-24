@@ -11,6 +11,7 @@ from queryduck.query import (
     element_classes,
     JoinEntity,
     Filter,
+    FetchEntity,
 )
 from queryduck.types import Statement, Blob
 from queryduck.serialization import serialize, deserialize
@@ -88,9 +89,10 @@ class StatementController(BaseController):
             cls = element_classes[tuple(k.split("."))]
             args = v.split(",", cls.num_args)
             if issubclass(cls, JoinEntity):
-                target_key, key, predicate_str = args
-                predicate = self.unique_deserialize(predicate_str)
-                j = cls(predicate, q.joins[target_key], key)
+                target_key, key, *predicate_strs = v.split(",")
+                print(predicate_strs)
+                predicates = [self.unique_deserialize(ps) for ps in predicate_strs]
+                j = cls(predicates, q.joins[target_key], key)
                 q.join(j)
                 print(j)
             elif issubclass(cls, Filter):
@@ -101,6 +103,10 @@ class StatementController(BaseController):
                 f = cls(lhs, rhs)
                 q.filter(f)
                 print(lhs, rhs)
+            elif issubclass(cls, FetchEntity):
+                operand = q.joins[v]
+                f = cls(operand)
+                q.fetch(f)
         return q
 
     @view_config(route_name="get_query", renderer="json")
@@ -110,10 +116,17 @@ class StatementController(BaseController):
             self.request.GET.items(),
             self.request.matchdict["target"],
         )
+        query.show()
         values, more = self.repo.get_results(query)
+        statements = self.repo.get_additional_values(query, values)
+        print(
+            "Query results: {} primary, {} additional, {} files".format(
+                len(values), len(statements), len({})
+            )
+        )
         result = {
             "references": [serialize(v) for v in values],
-            "statements": {},
+            "statements": self.statements_to_dict(statements),
             "files": {},
             "more": more,
         }

@@ -1,3 +1,6 @@
+from sqlalchemy import and_
+
+from queryduck.constants import Component
 from queryduck.serialization import get_native_vtype
 from queryduck.types import Statement, Blob, value_types, value_comparison_methods
 
@@ -5,7 +8,24 @@ from queryduck.types import Statement, Blob, value_types, value_comparison_metho
 class EntitySet:
     def __init__(self, aliases):
         self.aliases = aliases
+        self.entities = {"main": self.aliases["main"]}
         self.fromclause = aliases["main"]
+
+    def register_entity(self, key, entity):
+        self.entities[key] = entity
+
+    def get_alias(self, key):
+        stack = []
+        cur = self.entities[key]
+        while cur.key is not None and cur.key not in self.aliases:
+            stack.append(cur.key)
+            cur = cur.target
+
+        print("STACK", stack)
+
+        for k in reversed(stack):
+            self.add_entity(k, self.entities[k])
+        return self.aliases[key]
 
     def add_entity(self, key, entity):
         target = entity.target
@@ -25,7 +45,10 @@ class EntitySet:
         elif target.value_component == Component.SUBJECT:
             rhs = target_alias.c.subject_id
 
-        where = and_(lhs == rhs, alias.c.predicate_id == entity.predicate.id)
+        where = lhs == rhs
+        if len(entity.predicates):
+            predicate_ids = [p.id for p in entity.predicates]
+            where = and_(where, alias.c.predicate_id.in_(predicate_ids))
         self.fromclause = self.fromclause.join(alias, where, isouter=True)
 
 

@@ -361,11 +361,11 @@ class PGRepository:
         for k, v in query.joins.items():
             if k == "main":
                 continue
-            es.add_entity(k, v)
+            es.register_entity(k, v)
 
         wheres = []
         for f in query.filters:
-            lhs = es.aliases[f.lhs.key]
+            lhs = es.get_alias(f.lhs.key)
             wheres.append(lhs.c.object_statement_id == f.rhs.id)
 
         inner = select(
@@ -385,3 +385,36 @@ class PGRepository:
         ]
         more = resultset.rowcount > query.limit
         return results, more
+
+    def get_additional_values(self, query, results):
+        main_ids = [s.id for s in results]
+        ids = main_ids[:]
+        table = blob_table if query.target == Blob else statement_table
+
+        for f in query.fetches:
+            es = EntitySet({"main": table.alias("main")})
+            for k, v in query.joins.items():
+                if k == "main":
+                    continue
+                es.register_entity(k, v)
+
+            alias = es.get_alias(f.operand.key)
+
+            sel = (
+                select([alias.c.id])
+                .select_from(es.fromclause)
+                .where(es.aliases['main'].c.id.in_(main_ids))
+            )
+            print("SEL", sel)
+            res = self.db.execute(sel)
+            ids += [i[0] for i in res.fetchall()]
+
+        allids = set(ids)
+        table = blob_table if query.target == Blob else statement_table
+        s, entities = self.select_full_statements(table)
+        where = table.c.id.in_(allids)
+        s = s.where(where).distinct(table.c.id)
+
+        results = self.db.execute(s)
+        statements = self.process_result_statements(results, entities)
+        return statements
