@@ -14,9 +14,9 @@ class EntitySet:
 
         target_alias = self.aliases[target.key]
         if entity.value_component == Component.OBJECT:
-            lhs = alias.c.object_statement_id
-        elif entity.value_component == Component.SUBJECT:
             lhs = alias.c.subject_id
+        elif entity.value_component == Component.SUBJECT:
+            lhs = alias.c.object_statement_id
 
         if entity.meta or target.value_component == Component.SELF:
             rhs = target_alias.c.id
