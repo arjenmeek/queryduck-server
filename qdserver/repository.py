@@ -343,15 +343,17 @@ class PGRepository:
         return blob
 
     def _show_db_query(self, db_query):
+        print("------ START DB STATEMENT ------")
         try:
             compiled = db_query.compile(
                 dialect=self.db.dialect, compile_kwargs={"literal_binds": True}
             )
-            print("DBQUERY", compiled)
+            print(compiled)
         except:
             compiled = db_query.compile(dialect=self.db.dialect)
-            print("DBQUERY", compiled)
-            print("PARAMS", compiled.params)
+            print(compiled)
+            print(compiled.params)
+        print("------ END DB STATEMENT ------")
 
     def _query_to_select(self, query):
         self.fill_ids(query.seen_values)
