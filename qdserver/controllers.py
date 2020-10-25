@@ -88,6 +88,9 @@ class StatementController(BaseController):
         query.show()
         values, more = self.repo.get_results(query)
         statements = self.repo.get_additional_values(query, values)
+        files = self.repo.get_blob_files(
+            [s.triple[2] for s in statements if s.triple and type(s.triple[2]) == Blob]
+        )
         print(
             "Query results: {} primary, {} additional, {} files".format(
                 len(values), len(statements), len({})
@@ -96,7 +99,7 @@ class StatementController(BaseController):
         result = {
             "references": [serialize(v) for v in values],
             "statements": self.statements_to_dict(statements),
-            "files": {},
+            "files": self.serialize_files(files),
             "more": more,
         }
         return result
