@@ -7,11 +7,7 @@ from pyramid.view import view_config
 from queryduck.query import (
     QDQuery,
     Main,
-    ObjectFor,
     element_classes,
-    JoinEntity,
-    Filter,
-    FetchEntity,
 )
 from queryduck.types import Statement, Blob
 from queryduck.serialization import serialize, deserialize
@@ -84,29 +80,19 @@ class StatementController(BaseController):
         target = Blob if target_name == "blob" else Statement
         q = QDQuery(target)
         q.join(Main())
+        def callback(string):
+            if string.startswith("alias:"):
+                return q.joins[string[6:]]
+            else:
+                print("DESER", string)
+                return self.unique_deserialize(string)
+
         for k, v in params:
             print("PARAM", k, v)
             cls = element_classes[tuple(k.split("."))]
-            args = v.split(",", cls.num_args)
-            if issubclass(cls, JoinEntity):
-                target_key, key, *predicate_strs = v.split(",")
-                print(predicate_strs)
-                predicates = [self.unique_deserialize(ps) for ps in predicate_strs]
-                j = cls(predicates, q.joins[target_key], key)
-                q.join(j)
-                print(j)
-            elif issubclass(cls, Filter):
-                lhs_str, rhs_str = args
-                _, lhs_key = lhs_str.split(":", 1)
-                lhs = q.joins[lhs_key]
-                rhs = self.unique_deserialize(rhs_str)
-                f = cls(lhs, rhs)
-                q.filter(f)
-                print(lhs, rhs)
-            elif issubclass(cls, FetchEntity):
-                operand = q.joins[v]
-                f = cls(operand)
-                q.fetch(f)
+            element = cls.deserialize(v, callback)
+            q.add(element)
+
         return q
 
     @view_config(route_name="get_query", renderer="json")

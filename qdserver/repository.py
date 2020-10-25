@@ -5,7 +5,15 @@ from sqlalchemy import and_, or_
 from sqlalchemy.sql import select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
-from queryduck.types import Blob, Statement, File
+from queryduck.query import (
+    JoinEntity,
+    Filter,
+    FetchEntity,
+    Order,
+    Prefer,
+    Having,
+)
+from queryduck.types import Blob, Statement, File, value_types
 
 from .models import statement_table, blob_table, file_table, volume_table
 from .utility import (
@@ -157,6 +165,23 @@ class PGRepository:
             pr.c.handle,
             ob.c.handle,
             blob_table.c.handle,
+        ]
+
+        s = select(columns).select_from(select_from)
+        return s, entities
+
+    @staticmethod
+    def select_full_blobs(main):
+        """Construct a select() to fetch all necessary Statement fields."""
+        entities = {
+            "main": main,
+        }
+
+        select_from = (
+            main
+        )
+        columns = [
+            main,
         ]
 
         s = select(columns).select_from(select_from)
@@ -366,15 +391,33 @@ class PGRepository:
             es.register_entity(k, v)
 
         wheres = []
-        for f in query.filters:
+        for f in query.get_elements(Filter):
             lhs = es.get_alias(f.lhs.key)
             wheres.append(lhs.c.object_statement_id == f.rhs.id)
 
+        order_by = []
+        for o in query.get_elements(Order):
+            by = es.get_alias(o.by.key)
+            column_name = value_types[o.vtype]["column_name"]
+            order_by.append(by.c[column_name].label(None))
+
+        having = []
+        extra_columns = []
+
         inner = select(
-            [es.aliases["main"].c.id, es.aliases["main"].c.handle]
+            [es.aliases["main"].c.id, es.aliases["main"].c.handle] + order_by + extra_columns
         ).select_from(es.fromclause)
         inner = inner.where(and_(*wheres))
-        outer = inner.limit(query.limit + 1)
+
+        if order_by or having:
+            inner = inner.alias("innerq")
+            outer = select([inner]).select_from(inner)
+            if order_by:
+                outer = outer.order_by(*[inner.c[e.name] for e in order_by])
+            else:
+                outer = outer.order_by(table.c.handle)
+        else:
+            outer = inner.limit(query.limit + 1)
         return outer
 
     def get_results(self, query):
@@ -390,10 +433,14 @@ class PGRepository:
 
     def get_additional_values(self, query, results):
         main_ids = [s.id for s in results]
-        ids = main_ids[:]
-        table = blob_table if query.target == Blob else statement_table
+        if query.target == Blob:
+            table = blob_table
+            ids = []
+        else:
+            table = statement_table
+            ids = main_ids[:]
 
-        for f in query.fetches:
+        for f in query.get_elements(FetchEntity):
             es = EntitySet({"main": table.alias("main")})
             for k, v in query.joins.items():
                 if k == "main":
@@ -413,7 +460,7 @@ class PGRepository:
 
         allids = set(ids)
         table = blob_table if query.target == Blob else statement_table
-        s, entities = self.select_full_statements(table)
+        s, entities = self.select_full_statements(statement_table)
         where = table.c.id.in_(allids)
         s = s.where(where).distinct(table.c.id)
 
