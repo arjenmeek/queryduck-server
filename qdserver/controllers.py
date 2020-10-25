@@ -7,6 +7,7 @@ from pyramid.view import view_config
 from queryduck.query import (
     QDQuery,
     Main,
+    request_params_to_query,
     element_classes,
 )
 from queryduck.types import Statement, Blob
@@ -76,31 +77,13 @@ class StatementController(BaseController):
 
         return result
 
-    def deserialize_query(self, params, target_name):
-        target = Blob if target_name == "blob" else Statement
-        q = QDQuery(target)
-        q.join(Main())
-        def callback(string):
-            if string.startswith("alias:"):
-                return q.joins[string[6:]]
-            else:
-                print("DESER", string)
-                return self.unique_deserialize(string)
-
-        for k, v in params:
-            print("PARAM", k, v)
-            cls = element_classes[tuple(k.split("."))]
-            element = cls.deserialize(v, callback)
-            q.add(element)
-
-        return q
-
     @view_config(route_name="get_query", renderer="json")
     def get_query(self):
         # target = self.repo.get_target_table(self.request.matchdict["target"])
-        query = self.deserialize_query(
+        query = request_params_to_query(
             self.request.GET.items(),
             self.request.matchdict["target"],
+            self.unique_deserialize,
         )
         query.show()
         values, more = self.repo.get_results(query)
