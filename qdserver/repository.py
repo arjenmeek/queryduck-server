@@ -393,7 +393,8 @@ class PGRepository:
         wheres = []
         for f in query.get_elements(Filter):
             lhs = es.get_alias(f.lhs.key)
-            wheres.append(lhs.c.object_statement_id == f.rhs.id)
+            where = column_compare(f.rhs, f.keyword, lhs.c)
+            wheres.append(where)
 
         order_by = []
         for o in query.get_elements(Order):
