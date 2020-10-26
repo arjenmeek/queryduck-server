@@ -398,17 +398,14 @@ class PGRepository:
         for o in query.get_elements(Order):
             by = es.get_alias(o.by.key)
             column_name = value_types[o.vtype]["column_name"]
-            if o.keyword == "desc":
-                pass  # TODO
-            else:
-                order_by.append(by.c[column_name].label(None))
+            order_by.append((by.c[column_name].label(None), o.keyword=="desc"))
 
         having = []
         extra_columns = []
 
         inner = select(
             [es.aliases["main"].c.id, es.aliases["main"].c.handle]
-            + order_by
+            + [o for o, d in order_by]
             + extra_columns
         ).select_from(es.fromclause)
         inner = inner.where(and_(*wheres))
@@ -417,7 +414,15 @@ class PGRepository:
             inner = inner.alias("innerq")
             outer = select([inner]).select_from(inner)
             if order_by:
-                outer = outer.order_by(*[inner.c[e.name] for e in order_by])
+                for o, d in order_by:
+                    outer
+                params = []
+                for o, desc in order_by:
+                    if desc:
+                        params.append(inner.c[o.name].desc())
+                    else:
+                        params.append(inner.c[o.name])
+                outer = outer.order_by(*params)
             else:
                 outer = outer.order_by(table.c.handle)
         else:
