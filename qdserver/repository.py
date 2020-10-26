@@ -395,6 +395,15 @@ class PGRepository:
             where = column_compare(f.rhs, f.keyword, lhs.c)
             wheres.append(where)
 
+        prefer_by = []
+        for p in query.get_elements(Prefer):
+            by = es.get_alias(p.by.key)
+            column_name = value_types[p.vtype]["column_name"]
+            if p.keyword == "max":
+                prefer_by.append(by.c[column_name].desc())
+            else:
+                prefer_by.append(by.c[column_name])
+
         order_by = []
         for o in query.get_elements(Order):
             by = es.get_alias(o.by.key)
@@ -414,7 +423,12 @@ class PGRepository:
             + [o for o, d in order_by]
             + extra_columns
         ).select_from(es.fromclause)
-        inner = inner.where(and_(*wheres))
+        inner = (
+            inner.where(and_(*wheres))
+            .distinct(es.aliases["main"].c.handle)
+            .order_by(es.aliases["main"].c.handle, *prefer_by)
+        )
+
 
         if order_by or having:
             inner = inner.alias("innerquery")
@@ -436,7 +450,7 @@ class PGRepository:
                         params.append(inner.c[o.name])
                 outer = outer.order_by(*params)
             else:
-                outer = outer.order_by(table.c.handle)
+                outer = outer.order_by(inner.c[es.aliases["main"].c.handle.name])
         else:
             outer = inner.limit(query.limit + 1)
         return outer
