@@ -15,7 +15,6 @@ from queryduck.serialization import serialize, deserialize
 from queryduck.utility import transform_doc
 
 from .repository import PGRepository
-from .query import PGQuery, FromClauseBuilder
 
 
 class BaseController(object):
@@ -98,44 +97,6 @@ class StatementController(BaseController):
         )
         result = {
             "references": [serialize(v) for v in values],
-            "statements": self.statements_to_dict(statements),
-            "files": self.serialize_files(files),
-            "more": more,
-        }
-        return result
-
-    @view_config(route_name="query", renderer="json")
-    def query(self):
-        target = self.repo.get_target_table(self.request.matchdict["target"])
-        print("QUERY BODY:", self.request.body)
-        body = self.request.json_body
-
-        if "after" in body and body["after"] is not None:
-            after = self.unique_deserialize(body["after"])
-        else:
-            after = None
-
-        pgquery = PGQuery(self.repo, target, after=after)
-
-        if type(body["query"]) == dict:
-            query = self._prepare_query(body["query"])
-            pgquery.apply_query(query)
-        elif type(body["query"]) == list:
-            pgquery.apply_query(query)
-            print("LIST")
-        reference_statements, more = pgquery.get_results()
-        statements = pgquery.get_result_values()
-        files = self.repo.get_blob_files(
-            [s.triple[2] for s in statements if s.triple and type(s.triple[2]) == Blob]
-        )
-
-        print(
-            "Query results: {} primary, {} additional, {} files".format(
-                len(reference_statements), len(statements), len(files)
-            )
-        )
-        result = {
-            "references": [serialize(s) for s in reference_statements],
             "statements": self.statements_to_dict(statements),
             "files": self.serialize_files(files),
             "more": more,
