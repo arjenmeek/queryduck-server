@@ -20,6 +20,7 @@ from .utility import (
     EntitySet,
     process_db_row,
     column_compare,
+    final_column_compare,
     prepare_for_db,
 )
 
@@ -402,6 +403,11 @@ class PGRepository:
 
         having = []
         extra_columns = []
+        for h in query.get_elements(Having):
+            lhs = es.get_alias(h.lhs.key)
+            column_label, op_method, db_value = final_column_compare(h.rhs, h.keyword, lhs.c)
+            extra_columns.append(column_label)
+            having.append((column_label, op_method, db_value))
 
         inner = select(
             [es.aliases["main"].c.id, es.aliases["main"].c.handle]
@@ -411,8 +417,14 @@ class PGRepository:
         inner = inner.where(and_(*wheres))
 
         if order_by or having:
-            inner = inner.alias("innerq")
+            inner = inner.alias("innerquery")
             outer = select([inner]).select_from(inner)
+            wheres = []
+            for column_label, op, db_value in having:
+                column = inner.c[column_label.name]
+                wheres.append(getattr(column, op)(db_value))
+            if wheres:
+                outer = outer.where(and_(*wheres))
             if order_by:
                 for o, d in order_by:
                     outer
