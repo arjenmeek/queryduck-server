@@ -177,9 +177,7 @@ class PGRepository:
             "main": main,
         }
 
-        select_from = (
-            main
-        )
+        select_from = main
         columns = [
             main,
         ]
@@ -400,13 +398,18 @@ class PGRepository:
         for o in query.get_elements(Order):
             by = es.get_alias(o.by.key)
             column_name = value_types[o.vtype]["column_name"]
-            order_by.append(by.c[column_name].label(None))
+            if o.keyword == "desc":
+                pass  # TODO
+            else:
+                order_by.append(by.c[column_name].label(None))
 
         having = []
         extra_columns = []
 
         inner = select(
-            [es.aliases["main"].c.id, es.aliases["main"].c.handle] + order_by + extra_columns
+            [es.aliases["main"].c.id, es.aliases["main"].c.handle]
+            + order_by
+            + extra_columns
         ).select_from(es.fromclause)
         inner = inner.where(and_(*wheres))
 
@@ -453,7 +456,7 @@ class PGRepository:
             sel = (
                 select([alias.c.id])
                 .select_from(es.fromclause)
-                .where(es.aliases['main'].c.id.in_(main_ids))
+                .where(es.aliases["main"].c.id.in_(main_ids))
             )
             print("SEL", sel)
             res = self.db.execute(sel)
