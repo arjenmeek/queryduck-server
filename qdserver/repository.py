@@ -1,3 +1,5 @@
+import time
+
 from collections import defaultdict
 from itertools import islice
 
@@ -231,7 +233,6 @@ class PGRepository:
         return processed
 
     def get_statement_id_map(self, statements):
-        print(statements)
         handles = [s.handle for s in statements]
         sel = select([statement_table.c.id, statement_table.c.handle]).where(
             statement_table.c.handle.in_(handles)
@@ -366,8 +367,8 @@ class PGRepository:
         blob = Blob(handle=handle, id_=id_)
         return blob
 
-    def _show_db_query(self, db_query):
-        print("------ START DB STATEMENT ------")
+    def _verbose_execute(self, db_query, label="untitled"):
+        print(f"------ START DB QUERY {label} ------")
         try:
             compiled = db_query.compile(
                 dialect=self.db.dialect, compile_kwargs={"literal_binds": True}
@@ -377,7 +378,12 @@ class PGRepository:
             compiled = db_query.compile(dialect=self.db.dialect)
             print(compiled)
             print(compiled.params)
-        print("------ END DB STATEMENT ------")
+        start = time.time()
+        result = self.db.execute(db_query)
+        end = time.time()
+        duration = end - start
+        print(f"------ END DB QUERY {label}, took {duration:.3f} seconds ------")
+        return result
 
     def _query_to_select(self, query):
         self.fill_ids(query.seen_values)
@@ -408,13 +414,15 @@ class PGRepository:
         for o in query.get_elements(Order):
             by = es.get_alias(o.by.key)
             column_name = value_types[o.vtype]["column_name"]
-            order_by.append((by.c[column_name].label(None), o.keyword=="desc"))
+            order_by.append((by.c[column_name].label(None), o.keyword == "desc"))
 
         having = []
         extra_columns = []
         for h in query.get_elements(Having):
             lhs = es.get_alias(h.lhs.key)
-            column_label, op_method, db_value = final_column_compare(h.rhs, h.keyword, lhs.c)
+            column_label, op_method, db_value = final_column_compare(
+                h.rhs, h.keyword, lhs.c
+            )
             extra_columns.append(column_label)
             having.append((column_label, op_method, db_value))
 
@@ -428,7 +436,6 @@ class PGRepository:
             .distinct(es.aliases["main"].c.handle)
             .order_by(es.aliases["main"].c.handle, *prefer_by)
         )
-
 
         if order_by or having:
             inner = inner.alias("innerquery")
@@ -457,8 +464,7 @@ class PGRepository:
 
     def get_results(self, query):
         db_select = self._query_to_select(query)
-        self._show_db_query(db_select)
-        resultset = self.db.execute(db_select)
+        resultset = self._verbose_execute(db_select, "main result")
         results = [
             query.target(handle=row[1], id_=row[0])
             for row in islice(resultset, query.limit)
@@ -489,8 +495,7 @@ class PGRepository:
                 .select_from(es.fromclause)
                 .where(es.aliases["main"].c.id.in_(main_ids))
             )
-            print("SEL", sel)
-            res = self.db.execute(sel)
+            res = self._verbose_execute(sel, "additional values")
             ids += [i[0] for i in res.fetchall()]
 
         allids = set(ids)

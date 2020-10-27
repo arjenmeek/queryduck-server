@@ -21,8 +21,6 @@ class EntitySet:
             stack.append(cur.key)
             cur = cur.target
 
-        print("STACK", stack)
-
         for k in reversed(stack):
             self.add_entity(k, self.entities[k])
         return self.aliases[key]

@@ -52,7 +52,6 @@ class TransactionController(BaseController):
         all_statements = self.repo.create_statements(
             statements + transaction_statements
         )
-        # [print(s, s.triple) for s in statements]
 
         result = {
             "statements": {},
