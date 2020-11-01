@@ -255,6 +255,8 @@ class PGRepository:
         self.fill_statement_ids(statements, allow_create)
         blobs = list(filter(lambda v: type(v) == Blob, values))
         self.fill_blob_ids(blobs, allow_create)
+        files = list(filter(lambda v: type(v) == File, values))
+        self.fill_file_blobs(files)
 
     def fill_statement_ids(self, statements, allow_create=False):
         id_map = self.get_statement_id_map(statements)
@@ -301,6 +303,10 @@ class PGRepository:
         else:
             for b in missing:
                 b.id = -1
+
+    def fill_file_blobs(self, files):
+        for f in files:
+            f.blob = self.get_file_blob(f)
 
     def get_target_table(self, target_name):
         if target_name == "blob":
