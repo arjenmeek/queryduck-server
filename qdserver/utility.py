@@ -1,8 +1,11 @@
 from sqlalchemy import and_
 
+from .errors import UserError, TodoError
+
 from queryduck.constants import Component
 from queryduck.serialization import get_native_vtype
 from queryduck.types import Statement, Blob, value_types, value_comparison_methods
+from queryduck.query import QueryEntity
 
 
 class EntitySet:
@@ -48,6 +51,52 @@ class EntitySet:
             predicate_ids = [p.id for p in entity.predicates]
             where = and_(where, alias.c.predicate_id.in_(predicate_ids))
         self.fromclause = self.fromclause.join(alias, where, isouter=True)
+
+    def get_alias_column(self, alias, component, vtype):
+        if component == Component.SELF:
+            if not vtype in ("s",):
+                raise UserError(f"Invalid value type for self: {vtype}")
+            column = alias.c.id
+        elif component == Component.SUBJECT:
+            if not vtype in ("s",):
+                raise UserError(f"Invalid value type for subject: {vtype}")
+            column = alias.c.subject_id
+        elif component == Component.OBJECT:
+            vtype_info = value_types[vtype]
+            column = alias.c[vtype_info["column_name"]]
+        return column
+
+    def db_compare(self, lhs, op, rhs):
+        if isinstance(lhs, QueryEntity):
+            lhs_alias = self.get_alias(lhs.key)
+            lhs_type = None
+        else:
+            lhs_alias = None
+            lhs_type = get_native_vtype(lhs)
+
+        if isinstance(rhs, QueryEntity):
+            rhs_alias = self.get_alias(rhs.key)
+            rhs_type = None
+        else:
+            rhs_alias = None
+            rhs_type = get_native_vtype(rhs)
+
+        if lhs_alias is not None and rhs_alias is not None:
+            lhs_operand = self.get_alias_column(lhs_alias, lhs.value_component, "s")
+            rhs_operand = self.get_alias_column(rhs_alias, rhs.value_component, "s")
+        elif lhs_alias is not None:
+            lhs_operand = self.get_alias_column(lhs_alias, lhs.value_component, rhs_type)
+            if rhs_type == "file":
+                rhs_operand = rhs.blob.id
+            elif rhs_type in ("s", "blob"):
+                rhs_operand = rhs.id
+            else:
+                rhs_operand = rhs
+        else:
+            raise TodoError()
+
+        op_method = value_comparison_methods[op]
+        return getattr(lhs_operand, op_method)(rhs_operand)
 
 
 def process_db_row(db_row, db_columns, db_entities):
