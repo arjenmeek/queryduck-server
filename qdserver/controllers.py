@@ -92,7 +92,7 @@ class StatementController(BaseController):
         )
         print(
             "Query results: {} primary, {} additional, {} files".format(
-                len(values), len(statements), len({})
+                len(values), len(statements), len(files)
             )
         )
         result = {
