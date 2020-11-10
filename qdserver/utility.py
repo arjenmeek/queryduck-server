@@ -1,5 +1,6 @@
 from sqlalchemy import and_
 
+from .models import statement_table
 from .errors import UserError, TodoError
 
 from queryduck.constants import Component
@@ -30,19 +31,25 @@ class EntitySet:
 
     def add_entity(self, key, entity):
         target = entity.target
-        alias = self.aliases["main"].alias(key)
+        alias = statement_table.alias(key)
         self.aliases[key] = alias
 
         target_alias = self.aliases[target.key]
         if entity.value_component == Component.OBJECT:
             lhs = alias.c.subject_id
         elif entity.value_component == Component.SUBJECT:
-            lhs = alias.c.object_statement_id
+            if target.value_type == Blob:
+                lhs = alias.c.object_blob_id
+            else:
+                lhs = alias.c.object_statement_id
 
         if entity.meta or target.value_component == Component.SELF:
             rhs = target_alias.c.id
         elif target.value_component == Component.OBJECT:
-            rhs = target_alias.c.object_statement_id
+            if entity.value_type == Blob:
+                rhs = target_alias.c.object_blob_id
+            else:
+                rhs = target_alias.c.object_statement_id
         elif target.value_component == Component.SUBJECT:
             rhs = target_alias.c.subject_id
 

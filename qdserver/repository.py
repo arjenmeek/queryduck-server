@@ -477,7 +477,7 @@ class PGRepository:
         more = resultset.rowcount > query.limit
         return results, more
 
-    def get_additional_values(self, query, results):
+    def get_additional_statements(self, query, results):
         main_ids = [s.id for s in results]
         if query.target == Blob:
             table = blob_table
@@ -503,11 +503,9 @@ class PGRepository:
             res = self._verbose_execute(sel, "additional values")
             ids += [i[0] for i in res.fetchall()]
 
-        allids = set(ids)
-        table = blob_table if query.target == Blob else statement_table
         s, entities = self.select_full_statements(statement_table)
-        where = table.c.id.in_(allids)
-        s = s.where(where).distinct(table.c.id)
+        where = statement_table.c.id.in_(set(ids))
+        s = s.where(where).distinct(statement_table.c.id)
 
         results = self.db.execute(s)
         statements = self.process_result_statements(results, entities)

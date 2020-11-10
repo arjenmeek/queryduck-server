@@ -86,10 +86,15 @@ class StatementController(BaseController):
         )
         query.show()
         values, more = self.repo.get_results(query)
-        statements = self.repo.get_additional_values(query, values)
-        files = self.repo.get_blob_files(
-            [s.triple[2] for s in statements if s.triple and type(s.triple[2]) == Blob]
-        )
+        statements = self.repo.get_additional_statements(query, values)
+        blobs = []
+        for s in statements:
+            if s.triple and type(s.triple[2]) == Blob:
+                blobs.append(s.triple[2])
+        for v in values:
+            if type(v) == Blob:
+                blobs.append(v)
+        files = self.repo.get_blob_files(blobs)
         print(
             "Query results: {} primary, {} additional, {} files".format(
                 len(values), len(statements), len(files)
