@@ -61,11 +61,11 @@ class EntitySet:
 
     def get_alias_column(self, alias, component, vtype):
         if component == Component.SELF:
-            if not vtype in ("s",):
+            if not vtype in ("s", "none"):
                 raise UserError(f"Invalid value type for self: {vtype}")
             column = alias.c.id
         elif component == Component.SUBJECT:
-            if not vtype in ("s",):
+            if not vtype in ("s", "none"):
                 raise UserError(f"Invalid value type for subject: {vtype}")
             column = alias.c.subject_id
         elif component == Component.OBJECT:
@@ -73,7 +73,10 @@ class EntitySet:
             column = alias.c[vtype_info["column_name"]]
         return column
 
-    def db_compare(self, lhs, op, rhs):
+    def db_compare(self, f):
+        lhs = f.lhs
+        op = f.keyword
+        rhs = f.rhs
         if isinstance(lhs, QueryEntity):
             lhs_alias = self.get_alias(lhs.key)
             lhs_type = None

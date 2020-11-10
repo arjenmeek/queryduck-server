@@ -403,7 +403,7 @@ class PGRepository:
 
         wheres = []
         for f in query.get_elements(Filter):
-            where = es.db_compare(f.lhs, f.keyword, f.rhs)
+            where = es.db_compare(f)
             wheres.append(where)
 
         prefer_by = []
