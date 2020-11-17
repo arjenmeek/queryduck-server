@@ -65,7 +65,11 @@ class StatementController(BaseController):
 
     @view_config(route_name="get_statements", renderer="json")
     def get_statements(self):
-        quads = self.repo.get_all_statements()
+        if "after" in self.request.GET:
+            after = self.unique_deserialize(self.request.GET["after"])
+        else:
+            after = None
+        quads = self.repo.get_all_statements(after=after)
 
         result = {
             "statements": [],

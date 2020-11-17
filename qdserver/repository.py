@@ -119,9 +119,12 @@ class PGRepository:
 
         return statements
 
-    def get_all_statements(self):
+    def get_all_statements(self, after=None):
         s, entities = self.select_full_statements(statement_table, blob_files=False)
-        s = s.order_by(statement_table.c.handle)
+        s = s.where(statement_table.c.subject_id!=None)
+        if after:
+            s = s.where(statement_table.c.handle>after.handle)
+        s = s.order_by(statement_table.c.handle).limit(10000)
         results = self.db.execute(s)
         quads = self.process_result_quads(results, entities)
         return quads
