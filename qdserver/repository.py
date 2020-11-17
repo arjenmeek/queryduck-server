@@ -190,20 +190,6 @@ class PGRepository:
         return s, entities
 
     @staticmethod
-    def process_result_rows(results, entities):
-        processed = []
-        for row in results:
-            statement = self.unique_add(
-                Statement(handle=row[entities["main"].c.handle])
-            )
-            statement.triple = (
-                self.unique_add(Statement(handle=row[entities["su"].c.handle])),
-                self.unique_add(Statement(handle=row[entities["pr"].c.handle])),
-                self.unique_add(process_db_row(row, entities["main"].c, entities)[0]),
-            )
-        return processed
-
-    @staticmethod
     def process_result_quads(results, entities):
         processed = []
         for row in results:
