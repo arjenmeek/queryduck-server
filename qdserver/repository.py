@@ -14,6 +14,7 @@ from queryduck.query import (
     Order,
     Prefer,
     Having,
+    AfterTuple,
 )
 from queryduck.types import Blob, Statement, File, value_types
 
@@ -465,6 +466,9 @@ class PGRepository:
                 outer = outer.order_by(inner.c[es.aliases["main"].c.handle.name])
         else:
             outer = inner.limit(query.limit + 1)
+
+        for a in query.get_elements(AfterTuple):
+            outer = outer.where(es.aliases["main"].c.handle > a.values[0].handle)
         return outer
 
     def get_results(self, query):
