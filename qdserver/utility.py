@@ -89,7 +89,7 @@ class EntitySet:
             rhs_type = None
         else:
             rhs_alias = None
-            rhs_type = get_native_vtype(rhs)
+            rhs_type = get_native_vtype(rhs[0] if type(rhs) == list else rhs)
 
         if lhs_alias is not None and rhs_alias is not None:
             lhs_operand = self.get_alias_column(lhs_alias, lhs.value_component, "s")
