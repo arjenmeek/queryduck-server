@@ -55,12 +55,15 @@ class TransactionController(BaseController):
 
         result = {
             "statements": {},
+            "references": [],
         }
 
         for statement in statements:
-            result["statements"][serialize(statement)] = [
+            ser_statement = serialize(statement)
+            result["statements"][ser_statement] = [
                 serialize(e) for e in statement.triple
             ]
+            result["references"].append(ser_statement)
 
         return result
 
