@@ -97,9 +97,15 @@ class EntitySet:
         elif lhs_alias is not None:
             lhs_operand = self.get_alias_column(lhs_alias, lhs.value_component, rhs_type)
             if rhs_type == "file":
-                rhs_operand = rhs.blob.id
+                if type(rhs) == list:
+                    rhs_operand = [f.blob.id for f in rhs]
+                else:
+                    rhs_operand = rhs.blob.id
             elif rhs_type in ("s", "blob"):
-                rhs_operand = rhs.id
+                if type(rhs) == list:
+                    rhs_operand = [e.id for e in rhs]
+                else:
+                    rhs_operand = rhs.id
             else:
                 rhs_operand = rhs
         else:
