@@ -5,6 +5,7 @@ from itertools import islice
 
 from sqlalchemy import and_, or_
 from sqlalchemy.sql import select
+from sqlalchemy.sql.expression import tuple_ as sqltuple
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from queryduck.query import (
@@ -294,10 +295,6 @@ class PGRepository:
             for b in missing:
                 b.id = -1
 
-    def fill_file_blobs(self, files):
-        for f in files:
-            f.blob = self.get_file_blob(f)
-
     def get_target_table(self, target_name):
         if target_name == "blob":
             target = blob_table
@@ -338,30 +335,31 @@ class PGRepository:
             files[key].append(f)
         return files
 
-    def get_file_blob(self, file_):
+    def fill_file_blobs(self, files):
         select_from = file_table.join(
             volume_table, volume_table.c.id == file_table.c.volume_id, isouter=True
         ).join(blob_table, blob_table.c.id == file_table.c.blob_id, isouter=True)
 
+        file_tuple = sqltuple(volume_table.c.reference, file_table.c.path)
+        in_values = [(f.volume, f.path) for f in files]
+
         sel = (
-            select(
-                [
-                    blob_table.c.id,
-                    blob_table.c.handle,
-                ]
-            )
+            select([
+                blob_table.c.id,
+                blob_table.c.handle,
+                volume_table.c.reference,
+                file_table.c.path,
+            ])
             .select_from(select_from)
-            .where(
-                and_(
-                    volume_table.c.reference == file_.volume,
-                    file_table.c.path == file_.path,
-                )
-            )
+            .where(file_tuple.in_(in_values))
         )
         res = self.db.execute(sel)
-        id_, handle = res.fetchone()
-        blob = Blob(handle=handle, id_=id_)
-        return blob
+        file_blobs = {}
+        for id_, handle, volume, path in res.fetchall():
+            file_blobs[(volume, path)] = Blob(handle=handle, id_=id_)
+        for f in files:
+            f.blob = file_blobs[(f.volume, f.path)]
+        return files
 
     def _verbose_execute(self, db_query, label="untitled"):
         print(f"------ START DB QUERY {label} ------")
