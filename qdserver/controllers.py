@@ -80,6 +80,40 @@ class StatementController(BaseController):
 
         return result
 
+    @view_config(route_name="post_query", renderer="json")
+    def post_query(self):
+        print("___")
+        print(self.request.text)
+        print("___")
+        query = request_params_to_query(
+            self.request.POST.items(),
+            self.request.matchdict["target"],
+            self.unique_deserialize,
+        )
+        query.show()
+        values, more = self.repo.get_results(query)
+        statements = self.repo.get_additional_statements(query, values)
+        blobs = []
+        for s in statements:
+            if s.triple and type(s.triple[2]) == Blob:
+                blobs.append(s.triple[2])
+        for v in values:
+            if type(v) == Blob:
+                blobs.append(v)
+        files = self.repo.get_blob_files(blobs)
+        print(
+            "Query results: {} primary, {} additional, {} files".format(
+                len(values), len(statements), len(files)
+            )
+        )
+        result = {
+            "references": [serialize(v) for v in values],
+            "statements": self.statements_to_dict(statements),
+            "files": self.serialize_files(files),
+            "more": more,
+        }
+        return result
+
     @view_config(route_name="get_query", renderer="json")
     def get_query(self):
         # target = self.repo.get_target_table(self.request.matchdict["target"])
