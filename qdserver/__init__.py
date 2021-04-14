@@ -70,7 +70,7 @@ def main(settings):
 
     config.add_view(view=error_view, context=Exception, renderer="json")
 
-    config.add_static_view(name="static", path="../../webclient")
+    config.add_static_view(name="static", path="../../queryduck-web/static")
 
     config.add_route("post_query", "/{target}/query", request_method="POST")
     config.add_route("get_query", "/{target}/query", request_method="GET")
